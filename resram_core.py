@@ -27,16 +27,22 @@ class load_input:
         self.colors = plt.cm.hsv(np.linspace(0, 1, len(self.wg)))
         self.cmap = ListedColormap(self.colors)
         self.S = (self.delta**2) / 2  # calculate in cross_sections()
+        self.inp_txt()
         try:
-            self.abs_exp = np.loadtxt(self.dir + "abs_exp.dat")
-        except:
+            abs_exp_orig = np.loadtxt(self.dir + "abs_exp.dat")
+            abs_spec_interp = np.interp(self.convEL,abs_exp_orig[:, 0], abs_exp_orig[:, 1])
+            self.abs_exp = np.concat(self.convEL,abs_spec_interp)
+        except Exception:
             print("No experimental absorption spectrum found in directory/")
-
+        try:
+            fl_exp_orig = np.loadtxt(self.dir + "fl_exp.dat")
+            self.fl_exp = np.interp(self.convEL,fl_exp_orig[:, 0], fl_exp_orig[:, 1])
+        except Exception:
+            print("No experimental Raman cross section found in directory/")               
         try:
             self.profs_exp = np.loadtxt(self.dir + "profs_exp.dat")
-        except:
-            print("No experimental Raman cross section found in directory/")
-        self.inp_txt()
+        except Exception:
+            print("No experimental Raman cross section found in directory/")        
         (
             self.abs_cross,
             self.fl_cross,
@@ -57,7 +63,7 @@ class load_input:
         try:
             with open(self.dir + "inp.txt", "r") as i:
                 self.inp = [l.partition("#")[0].rstrip() for l in i.readlines()]
-        except:
+        except Exception:
             with open(self.dir + "inp_new.txt", "r") as i:
                 self.inp = [l.partition("#")[0].rstrip() for l in i.readlines()]
         # Constants and parameters from inp.txt
@@ -582,7 +588,7 @@ def run_save(obj, current_time_str):
     try:
         obj.abs_exp = np.loadtxt("abs_exp.dat")
         np.savetxt(current_time_str + "_data/abs_exp.dat", obj.abs_exp, delimiter="\t")
-    except:
+    except Exception:
         print("No experimental absorption spectrum found in directory/")
 
     try:
@@ -590,7 +596,7 @@ def run_save(obj, current_time_str):
         np.savetxt(
             current_time_str + "_data/profs_exp.dat", obj.profs_exp, delimiter="\t"
         )
-    except:
+    except Exception:
         print("No experimental Raman cross section found in directory/")
 
     with open(current_time_str + "_data/output.txt", "w") as o:
@@ -682,12 +688,12 @@ class resram_data:
             self.n = self.obj.n
             try:
                 self.abs_exp = self.obj.abs_exp
-            except:
+            except Exception:
                 print("No experimental absorption spectrum found in directory/")
 
             try:
                 self.profs_exp = self.obj.profs_exp
-            except:
+            except Exception:
                 print("No experimental Raman cross section found in directory/")
 
         else:
@@ -710,19 +716,19 @@ class resram_data:
             self.n = self.inp[8]
             try:
                 self.abs_exp = np.loadtxt("abs_exp.dat")
-            except:
+            except Exception:
                 print("No experimental absorption spectrum found in directory/")
             try:
                 self.abs_exp = np.loadtxt(input + "/abs_exp.dat")
-            except:
+            except Exception:
                 print("No experimental absorption spectrum found in directory " + input)
             try:
                 self.profs_exp = np.loadtxt("profs_exp.dat")
-            except:
+            except Exception:
                 print("No experimental Raman cross section found in directory/")
             try:
                 self.profs_exp = np.loadtxt(input + "/profs_exp.dat")
-            except:
+            except Exception:
                 print("No experimental Raman cross section found in directory " + input)
 
     def plot(self):
@@ -743,7 +749,17 @@ class resram_data:
         self.ax_raman.set_ylabel("Raman Cross Section (1e-14 A**2/Molecule)")
         self.ax_raman.legend()
         self.fig_raman.show()
-
+        ax_list = []
+        fig_list = []
+        for j in range(len(self.wg)):
+            fig, ax = plt.subplots(figsize=(8, 6))
+            fig_list.append(fig)
+            ax_list.append(ax)
+            ax.set_title("Raman Excitation Profile for " + str(self.wg[j]) + " cm-1")
+            ax.set_xlabel("Excitation Wavenumber (cm-1)")
+            ax.set_ylabel("Raman Cross Section (1e-14 A**2/Molecule)")
+            ax.legend(fontsize=8)
+            ax.set_xlim(self.EL[0], self.EL[-1])
         # plot excitation profile with expt value
         for i in np.arange(len(self.rpumps)):  # iterate over pump wn
             # rp = min(range(len(convEL)),key=lambda j:abs(convEL[j]-rpumps[i]))
@@ -769,13 +785,22 @@ class resram_data:
                 ) if i == 0 else self.ax_profs.plot(
                     self.EL, self.profs[:, j], color=color
                 )
+                ax_list[j].plot(
+                    self.EL,
+                    self.profs[:, j],
+                    color=color,
+                    label=str(self.wg[j]) + " cm-1")
                 try:
                     self.ax_profs.plot(
                         self.EL[rp], self.profs_exp[j, i], "o", color=color
                     )
-                except:
-                    continue
+                    ax_list[j].plot(
+                        self.EL[rp], self.profs_exp[j, i], "o", color=color
+                    )
+
+                except Exception:
                     print("no experimental Raman cross section data")
+                    continue
 
         # ax.set_xlim(16000,22500)
         # ax.set_ylim(0,0.5e-7)
@@ -788,7 +813,7 @@ class resram_data:
         self.ax_abs.plot(self.EL, self.fl, label="fl")
         try:
             self.ax_abs.plot(self.EL, self.abs_exp[:, -1], label="expt. abs")
-        except:
+        except Exception:
             print("no experimental absorption data")
         self.ax_abs.set_title("Absorption and Fluorescence Spectra")
         self.ax_abs.set_xlabel("Excitation Wavenumber (cm-1)")
@@ -835,7 +860,7 @@ def raman_residual(param, fit_obj=None):
 
     fit_obj.total_sigma = np.sum(fit_obj.sigma)
     # print("Total Raman sigma is "+ str(total_sigma))
-    fit_obj.loss = fit_obj.total_sigma - 100 * (fit_obj.correlation - 1)
+    fit_obj.loss = fit_obj.total_sigma + 30 * (1 - fit_obj.correlation)
     # print(loss)
     if fit_obj.loss_list == []:
         fit_obj.loss_list = [fit_obj.loss]
@@ -864,7 +889,7 @@ def param_init(fit_switch, obj=None):
 
     if fit_switch[len(obj.delta)] == 1:
         params_lmfit.add(
-            "gamma", value=obj.gamma, min=0.6 * obj.gamma, max=1.4 * obj.gamma
+            "gamma", value=obj.gamma, min=10, max=1000
         )
     else:
         params_lmfit.add("gamma", value=obj.gamma, vary=False)
@@ -878,13 +903,13 @@ def param_init(fit_switch, obj=None):
 
     if fit_switch[len(obj.delta) + 2] == 1:
         params_lmfit.add(
-            "theta", value=obj.theta, min=0.5 * obj.theta, max=1.5 * obj.theta
+            "theta", value=obj.theta, min=0, max=10
         )
     else:
         params_lmfit.add("theta", value=obj.theta, vary=False)
 
     if fit_switch[len(obj.delta) + 3] == 1:
-        params_lmfit.add("kappa", value=obj.k, min=0.9 * obj.k, max=1.1 * obj.k)
+        params_lmfit.add("kappa", value=obj.k, min=0, max=1)
     else:
         params_lmfit.add("kappa", value=obj.k, vary=False)
 
