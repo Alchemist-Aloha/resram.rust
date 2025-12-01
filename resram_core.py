@@ -564,10 +564,12 @@ def run_save(obj, current_time_str):
         os.mkdir("./" + current_time_str + "_data")
     except FileExistsError:
         pass
-    obj.s_reorg = obj.beta * (obj.L / obj.k) ** 2 / 2  # reorganization energy cm^-1
+    # Solvent reorganization energy cm^-1
+    obj.s_reorg = obj.beta * (obj.L / obj.k) ** 2 / 2  
     # internal reorganization energy
     obj.w_reorg = 0.5 * np.sum((obj.delta) ** 2 * obj.wg)
-    obj.reorg = obj.w_reorg + obj.s_reorg  # Total reorganization energy
+    # Total reorganization energy
+    obj.reorg = obj.w_reorg + obj.s_reorg  
     np.set_printoptions(threshold=sys.maxsize)
     np.savetxt(
         current_time_str + "_data/profs.dat",
@@ -838,13 +840,19 @@ class resram_data:
             print("no rpumps.dat file found in directory/, skipping Raman excitation profile plot")
         self.fig_abs, self.ax_abs = plt.subplots(figsize=(8, 6))
         self.ax_abs.plot(self.EL, self.abs, label="abs")
-        self.ax_abs.plot(self.EL, self.fl, label="fl")
+        self.fl_w3 = self.fl*self.EL**2/self.E0**2
+        fig,ax = plt.subplots(figsize=(8, 6))
+        ax.plot(self.EL, self.fl_w3/self.fl_w3.max(), label="fl w3 correction")
+        ax.plot(self.EL, self.fl/self.fl.max(), label="fl")
+        ax.legend()
+        self.ax_abs.plot(self.EL, self.fl_w3, label="fl w3 correction")
+        # self.ax_abs.plot(self.EL, self.fl, label="fl")
         try:
             self.ax_abs.plot(self.EL, self.abs_exp[:, 1], label="expt. abs")
         except Exception:
             print("no experimental absorption data")
         try:
-            self.ax_abs.plot(self.EL, self.fl.max()*self.fl_exp[:, 1]/self.fl_exp[:, 1].min(), label="expt. fl")
+            self.ax_abs.plot(self.EL, self.fl_w3.max()*self.fl_exp[:, 1]/self.fl_exp[:, 1].max(), label="expt. fl")
         except Exception:
             print("no experimental fluorescence data")
         self.ax_abs.set_title("Absorption and Fluorescence Spectra")
