@@ -30,6 +30,10 @@ class load_input:
         self.inp_txt()
         try:
             abs_exp_orig = np.loadtxt(self.dir + "abs_exp.dat")
+            if abs_exp_orig[0,0] > abs_exp_orig[-1,0]:
+                print("Experimental absorption spectrum appears to be inverted.")
+                abs_exp_orig[:,0] = abs_exp_orig[::-1,0]
+                abs_exp_orig[:,1] = abs_exp_orig[::-1,1]
             abs_spec_interp = np.interp(self.convEL,abs_exp_orig[:, 0], abs_exp_orig[:, 1])
             self.abs_exp = np.stack((self.convEL,abs_spec_interp),axis=0).T
         except Exception:
