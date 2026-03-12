@@ -1,8 +1,6 @@
-# ResRAM: Resonance Raman Analysis for Beginners 🧪
+# ResRAM: Resonance Raman Excitation Profile Analysis 🧪
 
-Welcome! This program helps scientists calculate and "fit" (match) theoretical models to experimental data from **Femtosecond Stimulated Raman Spectroscopy (FSRS)**. 
-
-Even if you are new to Python, this guide will help you get the program running and understand how it works.
+Welcome! This program helps scientists calculate and "fit" (match) theoretical models to experimental data from **Resonance Raman Spectroscopy**. 
 
 ---
 
@@ -69,8 +67,12 @@ When the program finishes, it creates a folder named with the current date (e.g.
 Happy scientific computing!
 
 ## Acknowledgments 🙌
-This program was developed by Likun Cai and is based on the work of Dr. Zachary Piontkowski and Dr Juan S. Sandoval in the field of FSRS. For more details, check out their research:
+This program was developed by Likun Cai and is based on the work of Dr. Zachary Piontkowski, Dr Juan S. Sandoval and many othersin the field of FSRS. For more details, check out their research:
 
 Piontkowski, Z. (2020). Excited state torsions and electron transfer in dye-sensitizers for light harvesting and photodynamic therapy. University of Rochester.
 
 Sandoval, J. S., & McCamant, D. W. (2023). The best models of Bodipy’s electronic excited state: comparing predictions from various DFT functionals with measurements from femtosecond stimulated Raman spectroscopy. The Journal of Physical Chemistry A, 127(39), 8238-8251.
+
+Li, B., Johnson, A. E., Mukamel, S., & Myers, A. B. (1994). The Brownian oscillator model for solvation effects in spontaneous light emission and their relationship to electron transfer. Journal of the American Chemical Society, 116(24), 11039-11047.
+
+
