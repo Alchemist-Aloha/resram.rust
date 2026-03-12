@@ -25,4 +25,5 @@ packages = ["resram_core.py"]
 dev = [
     "ipykernel>=7.1.0",
     "uv>=0.9.15",
+    "pytest>=8.0.0",
 ]
