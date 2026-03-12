@@ -563,7 +563,7 @@ def cross_sections(obj):
         for idxq, q in enumerate(obj.Q, start=0):
             for idxl, l in enumerate(q, start=0):
                 if q[idxl] > 0:
-                    # Fundamental transition for mode l
+                    # Positive change in vibrational quantum number. This corresponds to Stokes scattering where the vibrational mode is excited.
                     q_r[idxq, idxl, :] = (
                         np.sqrt((1.0 / factorial(q[idxl])))
                         * (((1 + obj.eta[idxl]) ** (0.5) * obj.delta[idxl]) / sqrt2)
@@ -571,10 +571,10 @@ def cross_sections(obj):
                         * (1 - np.exp(-1j * obj.wg[idxl] * thth)) ** (q[idxl])
                     )
                 elif q[idxl] < 0:
-                    # Hot band transition
+                    # Negative change in vibrational quantum number. This corresponds to anti-Stokes scattering where the vibrational mode is de-excited.
                     q_r[idxq, idxl, :] = (
                         np.sqrt(1.0 / factorial(np.abs(q[idxl])))
-                        * (((obj.eta[l]) ** (0.5) * obj.delta[l]) / sqrt2) ** (-q[idxl])
+                        * (((obj.eta[idxl]) ** (0.5) * obj.delta[idxl]) / sqrt2) ** (-q[idxl])
                         * (1 - np.exp(1j * obj.wg[idxl] * thth)) ** (-q[idxl])
                     )
             # Combine mode factor with absorption correlator to get Raman kernel
