@@ -1,16 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "project"
+name = "resram_core"
 version = "0.1.0"
-description = "Add your description here"
+description = "Resonance Raman (ResRAM) Core for spectroscopic analysis"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
+authors = [
+    { name = "Likun Cai", email = "kentclk@outlook.com" }
+]
 dependencies = [
     "lmfit>=1.3.4",
     "matplotlib>=3.10.7",
-    "numpy>=2.3.5",
-    "scipy>=1.16.3",
-    "tqdm>=4.67.1",
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["resram_core.py"]
 
 [dependency-groups]
 dev = [

@@ -4,7 +4,23 @@ Welcome! This program helps scientists calculate and "fit" (match) theoretical m
 
 ---
 
-## 1. Setting Up Your Computer 💻
+## 1. Installation 🛠️
+
+You can now install this program as a Python package. This makes it easy to use `import resram_core` in any of your scripts or notebooks.
+
+### Using `uv` (Recommended)
+If you have `uv` installed, run:
+```bash
+uv pip install .
+```
+
+### Using `pip`
+Or, use standard pip:
+```bash
+pip install .
+```
+
+## 2. Setting Up Your Computer 💻
 
 Before running the code, you need a few things installed:
 
@@ -67,7 +83,7 @@ When the program finishes, it creates a folder named with the current date (e.g.
 Happy scientific computing!
 
 ## Acknowledgments 🙌
-This program was developed by Likun Cai and is based on the work of Dr. Zachary Piontkowski, Dr Juan S. Sandoval and many othersin the field of FSRS. For more details, check out their research:
+This program was developed by Likun Cai and is based on the work of Dr. Zachary Piontkowski, Dr Juan S. Sandoval and many others in the field of Raman spectroscopy. For more details, check out their research:
 
 Piontkowski, Z. (2020). Excited state torsions and electron transfer in dye-sensitizers for light harvesting and photodynamic therapy. University of Rochester.
 
