@@ -1,3 +1,26 @@
+"""
+Resonance Raman (ResRAM) Core Module
+====================================
+This module implements the theoretical framework for calculating absorption,
+fluorescence, and resonance Raman excitation profiles (REPs) using the
+Independent Mode Displaced Harmonic Oscillator (IMDHO) formalism.
+
+It utilizes the time-dependent wavepacket approach and the Brownian oscillator
+model to account for solvent-induced line broadening and dynamics.
+
+Theory Reference:
+- Absorption/Fluorescence: Equation S6/S9 in Supplementary Information.
+- Resonance Raman: Equation S5 (First-order approximation).
+- Brownian Oscillator: Multimode lineshape theory (Mukamel, 1995).
+
+Key Parameters:
+- E0: Vertical/0-0 transition energy.
+- gamma (Γ): Homogeneous broadening (solvent dynamics).
+- theta (θ): Static inhomogeneous broadening (Gaussian distribution).
+- kappa (κ): Brownian oscillator parameter (ratio of damping to frequency).
+- delta (Δ): Dimensionless displacements of vibrational modes.
+"""
+
 import sys
 from datetime import datetime
 import os
@@ -36,52 +59,54 @@ class load_input:
             self.dir = "./"
         else:
             self.dir = dir
-        
+
         # Ground state normal mode frequencies cm^-1 (freqs.dat)
         self.wg = np.asarray(np.loadtxt(self.dir + "freqs.dat"))
         # Excited state normal mode frequencies cm^-1
         self.we = np.asarray(np.loadtxt(self.dir + "freqs.dat"))
         # Dimensionless displacements (deltas.dat)
         self.delta = np.asarray(np.loadtxt(self.dir + "deltas.dat"))
-        
+
         # UI/Plotting helpers
         self.colors = plt.cm.hsv(np.linspace(0, 1, len(self.wg)))
         self.cmap = ListedColormap(self.colors)
-        
+
         # Huang-Rhys factor calculation
         self.S = (self.delta**2) / 2
-        
+
         # Load parameters from inp.txt
         self.inp_txt()
-        
+
         # Load experimental spectra if available
         try:
             abs_exp_orig = np.loadtxt(self.dir + "abs_exp.dat")
-            if abs_exp_orig[0,0] > abs_exp_orig[-1,0]:
+            if abs_exp_orig[0, 0] > abs_exp_orig[-1, 0]:
                 print("Experimental absorption spectrum appears to be inverted.")
-                abs_exp_orig[:,0] = abs_exp_orig[::-1,0]
-                abs_exp_orig[:,1] = abs_exp_orig[::-1,1]
-            abs_spec_interp = np.interp(self.convEL,abs_exp_orig[:, 0], abs_exp_orig[:, 1])
-            self.abs_exp = np.stack((self.convEL,abs_spec_interp),axis=0).T
+                abs_exp_orig[:, 0] = abs_exp_orig[::-1, 0]
+                abs_exp_orig[:, 1] = abs_exp_orig[::-1, 1]
+            abs_spec_interp = np.interp(
+                self.convEL, abs_exp_orig[:, 0], abs_exp_orig[:, 1]
+            )
+            self.abs_exp = np.stack((self.convEL, abs_spec_interp), axis=0).T
         except Exception:
             print("No experimental absorption spectrum found in directory/")
-            
+
         try:
             fl_exp_orig = np.loadtxt(self.dir + "fl_exp.dat")
-            if fl_exp_orig[0,0] > fl_exp_orig[-1,0]:
+            if fl_exp_orig[0, 0] > fl_exp_orig[-1, 0]:
                 print("Experimental fluorescence spectrum appears to be inverted.")
-                fl_exp_orig[:,0] = fl_exp_orig[::-1,0]
-                fl_exp_orig[:,1] = fl_exp_orig[::-1,1]
-            fl_exp_interp = np.interp(self.convEL,fl_exp_orig[:, 0], fl_exp_orig[:, 1])
-            self.fl_exp = np.stack((self.convEL,fl_exp_interp),axis=0).T
+                fl_exp_orig[:, 0] = fl_exp_orig[::-1, 0]
+                fl_exp_orig[:, 1] = fl_exp_orig[::-1, 1]
+            fl_exp_interp = np.interp(self.convEL, fl_exp_orig[:, 0], fl_exp_orig[:, 1])
+            self.fl_exp = np.stack((self.convEL, fl_exp_interp), axis=0).T
         except Exception:
-            print("No experimental fluorescence spectrum found in directory/")               
-            
+            print("No experimental fluorescence spectrum found in directory/")
+
         try:
             self.profs_exp = np.loadtxt(self.dir + "profs_exp.dat")
         except Exception:
-            print("No experimental Raman cross section found in directory/")        
-            
+            print("No experimental Raman cross section found in directory/")
+
         # Initialize result containers
         (
             self.abs_cross,
@@ -94,14 +119,14 @@ class load_input:
         self.correlation = None  # Correlation between calc and expt absorption
         self.total_sigma = None  # Total Raman cross section
         self.loss = None
-        self.correlation_list = []  
-        self.sigma_list = []  
-        self.loss_list = []  
+        self.correlation_list = []
+        self.sigma_list = []
+        self.loss_list = []
 
     def inp_txt(self):
         """
         Reads simulation parameters from 'inp.txt' and calculates derived physical constants.
-        
+
         Derived constants include:
         - beta (β): 1/kbT
         - eta (η): Average thermal occupation numbers (Bose-Einstein statistics)
@@ -115,13 +140,13 @@ class load_input:
         except Exception:
             with open(self.dir + "inp_new.txt", "r") as i:
                 self.inp = [l.partition("#")[0].rstrip() for l in i.readlines()]
-        
+
         # Physical constants
         self.hbar = 5.3088  # Planck's constant (cm^-1 * ps)
         self.T = float(self.inp[13])  # Temperature (K)
         self.kbT = 0.695 * self.T  # Thermal energy in wavenumbers (cm^-1)
         self.cutoff = self.kbT * 0.1  # Cutoff for Boltzmann distribution
-        
+
         # Thermal occupation factors (η)
         if self.T > 10.0:
             self.beta = 1 / self.kbT  # beta in cm
@@ -133,7 +158,7 @@ class load_input:
         # Broadening parameters
         self.gamma = float(self.inp[0])  # Homogeneous broadening (cm^-1)
         self.theta = float(self.inp[1])  # Inhomogeneous broadening (cm^-1)
-        self.E0 = float(self.inp[2])     # 0-0 Transition energy (cm^-1)
+        self.E0 = float(self.inp[2])  # 0-0 Transition energy (cm^-1)
 
         ## Brownian Oscillator parameters ##
         self.k = float(self.inp[3])  # kappa parameter (κ)
@@ -149,7 +174,9 @@ class load_input:
         self.s_reorg = (
             self.beta * (self.L / self.k) ** 2 / 2
         )  # Solvent reorganization energy (cm^-1)
-        self.w_reorg = 0.5 * np.sum((self.delta) ** 2 * self.wg) # Vibrational reorganization energy
+        self.w_reorg = 0.5 * np.sum(
+            (self.delta) ** 2 * self.wg
+        )  # Vibrational reorganization energy
         self.reorg = self.w_reorg + self.s_reorg  # Total reorganization energy
 
         ## Time and energy range definition ##
@@ -157,7 +184,7 @@ class load_input:
         self.ntime = float(self.inp[5])  # Number of time steps
         self.UB_time = self.ntime * self.ts  # Upper bound in time range
         self.t = np.linspace(0, self.UB_time, int(self.ntime))  # time range array in ps
-        
+
         self.EL_reach = float(self.inp[6])  # How far plus and minus E0 you want
         self.EL = np.linspace(self.E0 - self.EL_reach, self.E0 + self.EL_reach, 1000)
         # Static inhomogeneous convolution range
@@ -172,7 +199,7 @@ class load_input:
         self.tp = np.linspace(0, self.UB_time_rot, int(self.ntime_rot))
         self.tm = None
         self.tm = np.append(-np.flip(self.tp[1:], axis=0), self.tp)
-        
+
         # Grid after convolution with inhomogeneous distribution
         self.convEL = np.linspace(
             self.E0 - self.EL_reach * 0.5,
@@ -194,14 +221,13 @@ class load_input:
             diffs = np.abs(self.convEL[:, np.newaxis] - self.rpumps)
             self.rp = np.argmin(diffs, axis=0)
             self.rp = self.rp.astype(int)
-
         except Exception:
             print("No rpumps.dat file found in directory/. Skipping Raman calculation.")
-            
+
         # Raman shift axis (output Raman spectra range)
         self.rshift = np.arange(
             float(self.inp[9]), float(self.inp[10]), float(self.inp[11])
-            )  
+        )
         self.res = float(self.inp[12])  # Peak width (resolution) for Raman spectra
 
         # Determine if thermal averaging (Boltzmann) is used
@@ -246,7 +272,7 @@ class load_input:
     def boltz_states(self):
         """
         Calculates possible initial vibrational states and their Boltzmann coefficients.
-        
+
         Returns:
             list: Combinations of vibrational states.
             list: Corresponding Boltzmann coefficients (normalized).
@@ -294,8 +320,8 @@ class load_input:
 def g(t, obj):
     """
     Brownian oscillator lineshape function g(t).
-    
-    Implements Equation S9 in the reference. This function accounts for 
+
+    Implements Equation S9 in the reference. This function accounts for
     homogeneous broadening and the dynamics of the environment.
 
     Args:
@@ -318,7 +344,7 @@ def A(t, obj):
     Implements Equation S6. This function calculates the electronic 
     transition dipole correlation function weighted by the vibrational 
     overlaps (IMDHO model).
-# old A function
+    # old A function
     def A(t,obj):
     # K=np.zeros((len(p.wg),len(t)),dtype=complex)
     # Initialize K matrix based on the type of t provided
@@ -360,10 +386,10 @@ def A(t, obj):
 def R(t1, t2, obj):
     """
     Higher-order Raman correlation function.
-    
-    Calculates the multi-dimensional correlation function required for 
+
+    Calculates the multi-dimensional correlation function required for
     higher-order Raman cross sections or multi-mode coupling effects.
-# old R function
+    # old R function
     def R(t1, t2,obj):
     # Initialize Ra and R arrays for calculations
     Ra = np.zeros((len(obj.a), len(obj.wg), len(obj.wg), len(obj.EL)), dtype=complex)
@@ -391,7 +417,7 @@ def R(t1, t2, obj):
                     Ra[idxa, idxq, idxl, :] = ((1./(factorial(a)*factorial(a+l))))*(((1+eta)*S*(1-np.exp(-1j*wg*t1))*(
                         1-np.exp(1j*wg*t2)))**(a+l))*(eta*S*(1-np.exp(1j*wg*t1))*(1-np.exp(-1j*wg*t2)))**(a)
                 R[idxq, idxl, :] = np.sum(Ra[:, idxq, idxl, :], axis=0)
-    return np.prod(R, axis=1)    
+    return np.prod(R, axis=1)
     Args:
         t1, t2: Time variables.
         obj: Simulation object.
@@ -480,10 +506,10 @@ def R(t1, t2, obj):
 def cross_sections(obj):
     """
     Main calculation engine for Absorption, Fluorescence, and Raman cross sections.
-    
-    This function performs the time integrations of the correlation functions 
+
+    This function performs the time integrations of the correlation functions
     to obtain the frequency-domain spectra.
-    
+
     1. Calculates Absorption and Fluorescence using A(t) and g(t).
     2. Convolves results with a Gaussian (inhomogeneous broadening θ).
     3. Calculates Raman Excitation Profiles (REPs) using Equation S5.
@@ -494,23 +520,19 @@ def cross_sections(obj):
     Returns:
         tuple: (abs_cross, fl_cross, raman_cross, boltz_state, boltz_coef)
     """
-    obj.S = (obj.delta**2) / 2  
+    obj.S = (obj.delta**2) / 2
     sqrt2 = np.sqrt(2)
-    
+
     # Refresh derived parameters
-    obj.D = (
-        obj.gamma * (1 + 0.85 * obj.k + 0.88 * obj.k**2) / (2.355 + 1.76 * obj.k)
-    )  
-    obj.L = obj.k * obj.D  
-    obj.EL = np.linspace(
-        obj.E0 - obj.EL_reach, obj.E0 + obj.EL_reach, 1000
-    )  
+    obj.D = obj.gamma * (1 + 0.85 * obj.k + 0.88 * obj.k**2) / (2.355 + 1.76 * obj.k)
+    obj.L = obj.k * obj.D
+    obj.EL = np.linspace(obj.E0 - obj.EL_reach, obj.E0 + obj.EL_reach, 1000)
     obj.convEL = np.linspace(
         obj.E0 - obj.EL_reach * 0.5,
         obj.E0 + obj.EL_reach * 0.5,
         (max(len(obj.E0_range), len(obj.EL)) - min(len(obj.E0_range), len(obj.EL)) + 1),
     )
-    
+
     # Work arrays
     q_r = np.ones((len(obj.wg), len(obj.wg), len(obj.th)), dtype=complex)
     K_r = np.zeros((len(obj.wg), len(obj.EL), len(obj.th)), dtype=complex)
@@ -615,7 +637,7 @@ def cross_sections(obj):
 def run_save(obj, current_time_str):
     """
     Executes the simulation and saves all resulting data to a time-stamped directory.
-    
+
     Generates:
     - Absorption and Fluorescence spectra files.
     - Raman excitation profiles (profs.dat).
@@ -644,12 +666,12 @@ def run_save(obj, current_time_str):
         os.mkdir("./" + current_time_str + "_data")
     except FileExistsError:
         pass
-        
+
     # Finalize reorganization energies for saving
-    obj.s_reorg = obj.beta * (obj.L / obj.k) ** 2 / 2  
+    obj.s_reorg = obj.beta * (obj.L / obj.k) ** 2 / 2
     obj.w_reorg = 0.5 * np.sum((obj.delta) ** 2 * obj.wg)
-    obj.reorg = obj.w_reorg + obj.s_reorg  
-    
+    obj.reorg = obj.w_reorg + obj.s_reorg
+
     # Save results to disk
     np.set_printoptions(threshold=sys.maxsize)
     np.savetxt(
@@ -658,7 +680,9 @@ def run_save(obj, current_time_str):
         delimiter="\t",
     )
     try:
-        np.savetxt(current_time_str + "_data/raman_spec.dat", raman_spec, delimiter="\t")
+        np.savetxt(
+            current_time_str + "_data/raman_spec.dat", raman_spec, delimiter="\t"
+        )
         np.savetxt(current_time_str + "_data/rpumps.dat", obj.rpumps)
     except Exception:
         pass
@@ -669,7 +693,7 @@ def run_save(obj, current_time_str):
     np.savetxt(current_time_str + "_data/rshift.dat", obj.rshift)
 
     # Save current parameters for reproducibility
-    inp_list = [float(x) for x in obj.inp]  
+    inp_list = [float(x) for x in obj.inp]
     inp_list[7] = obj.M
     inp_list[0] = obj.gamma
     inp_list[1] = obj.theta
@@ -684,7 +708,7 @@ def run_save(obj, current_time_str):
         np.savetxt(current_time_str + "_data/abs_exp.dat", obj.abs_exp, delimiter="\t")
     except Exception:
         print("No experimental absorption spectrum found in directory/")
-    try:        
+    try:
         np.savetxt(current_time_str + "_data/fl_exp.dat", obj.fl_exp, delimiter="\t")
     except Exception:
         print("No experimental absorption spectrum found in directory/")
@@ -747,19 +771,20 @@ def run_save(obj, current_time_str):
             f"{obj.inp[14]} # convergence for sums # no effect since order > 1 broken\n"
         )
         file.write(f"{obj.inp[15]} # Boltz Toggle\n")
-        
+
     return resram_data(current_time_str + "_data/")
 
 
 class resram_data:
     """
     Class for managing, loading, and plotting ResRAM simulation results.
-    
+
     Can be initialized with a directory path containing results from run_save.
     """
 
     def __init__(self, input=None):
         if input is None:
+            # Default initialization (runs a new simulation)
             self.obj = load_input()
             abs_cross, fl_cross, raman_cross, boltz_state, boltz_coef = cross_sections(
                 self.obj
@@ -810,7 +835,7 @@ class resram_data:
             self.abs = np.loadtxt(input + "/Abs.dat")
             self.EL = np.loadtxt(input + "/EL.dat")
             try:
-            self.fl = np.loadtxt(input + "/Fl.dat")
+                self.fl = np.loadtxt(input + "/Fl.dat")
             except Exception:
                 print("No fluorescence spectrum found in directory " + input)
             self.raman_spec = np.loadtxt(input + "/raman_spec.dat")
@@ -839,22 +864,26 @@ class resram_data:
             try:
                 self.fl_exp = np.loadtxt(input + "/fl_exp.dat")
             except Exception:
-                print("No experimental fluorescence spectrum found in directory " + input)            
+                print(
+                    "No experimental fluorescence spectrum found in directory " + input
+                )
 
-    def plot(self):              
+    def plot(self):
         """
         Generates plots for Raman spectra, Raman excitation profiles, and Abs/Fl spectra.
         """
         # divide color map to number of freqs
         colors = plt.cm.hsv(np.linspace(0, 1, len(self.wg)))
         cmap = ListedColormap(colors)
-        
+
         # Plot Raman spectra at all excitation wavelengths
         if self.rpumps is not None:
             self.fig_raman, self.ax_raman = plt.subplots(figsize=(8, 6))
             for i in np.arange(len(self.rpumps)):
                 self.ax_raman.plot(
-                    self.rshift, self.raman_spec[:, i], label=str(self.rpumps[i]) + " cm-1"
+                    self.rshift,
+                    self.raman_spec[:, i],
+                    label=str(self.rpumps[i]) + " cm-1",
                 )
             self.ax_raman.set_title("Raman spectra")
             self.ax_raman.set_xlabel("Raman Shift (cm-1)")
@@ -868,14 +897,16 @@ class resram_data:
                 fig, ax = plt.subplots(figsize=(8, 6))
                 fig_list.append(fig)
                 ax_list.append(ax)
-                ax.set_title("Raman Excitation Profile for " + str(self.wg[j]) + " cm-1")
+                ax.set_title(
+                    "Raman Excitation Profile for " + str(self.wg[j]) + " cm-1"
+                )
                 ax.set_xlabel("Excitation Wavenumber (cm$^{{-1}}$)")
                 ax.set_ylabel("Raman Cross Section (10$^{{-14}}$ Å$^{{2}}$/Molecule)")
                 ax.legend(fontsize=8)
                 ax.set_xlim(self.EL[0], self.EL[-1])
         else:
             print("no rpumps.dat file found in directory/, skipping Raman spectra plot")
-            
+
         # Plot Excitation Profiles (REPs) vs experimental points
         if self.rpumps is not None:
             self.fig_profs, self.ax_profs = plt.subplots(figsize=(8, 6))
@@ -889,7 +920,7 @@ class resram_data:
                     if diff < min_diff:
                         min_diff = diff
                         rp = rps
-                
+
                 for j in range(len(self.wg)):  # iterate over all raman freqs
                     color = cmap(j)
                     self.ax_profs.plot(
@@ -904,7 +935,8 @@ class resram_data:
                         self.EL,
                         self.profs[:, j],
                         color=color,
-                        label=str(self.wg[j]) + " cm-1")
+                        label=str(self.wg[j]) + " cm-1",
+                    )
                     try:
                         self.ax_profs.plot(
                             self.EL[rp], self.profs_exp[j, i], "o", color=color
@@ -919,17 +951,21 @@ class resram_data:
 
             self.ax_profs.set_title("Raman Excitation Profiles")
             self.ax_profs.set_xlabel("Excitation Wavenumber (cm$^{{-1}}$)")
-            self.ax_profs.set_ylabel("Raman Cross Section (10$^{{-14}}$ Å$^{{2}}$/Molecule)")
+            self.ax_profs.set_ylabel(
+                "Raman Cross Section (10$^{{-14}}$ Å$^{{2}}$/Molecule)"
+            )
             self.ax_profs.legend(ncol=2, fontsize=8)
             self.fig_profs.show()
         else:
-            print("no rpumps.dat file found in directory/, skipping Raman excitation profile plot")
-            
+            print(
+                "no rpumps.dat file found in directory/, skipping Raman excitation profile plot"
+            )
+
         # Plot Absorption and Fluorescence spectra
         self.fig_absfl, self.ax_fl = plt.subplots(figsize=(8, 6))
         if self.fl is not None:
             # Fluorescence correction by (omega_L/omega_0)^2 factor
-        self.fl_w3 = self.fl*self.EL**2/self.E0**2
+            self.fl_w3 = self.fl * self.EL**2 / self.E0**2
         # fig,ax = plt.subplots(figsize=(8, 6))
         # ax.plot(self.EL, self.fl_w3/self.fl_w3.max(), label="fl w3 correction")
         # ax.plot(self.EL, self.fl/self.fl.max(), label="fl")
@@ -937,31 +973,43 @@ class resram_data:
         self.ax_fl.plot(self.EL, self.fl_w3, label="Calc. Fl.", color="red")
         self.ax_abs = self.ax_fl.twinx()
         self.ax_abs.plot(self.EL, self.abs, label="Calc. Abs.", color="blue")
-        
+
         try:
-            self.ax_abs.plot(self.EL, self.abs_exp[:, 1], label="Expt. Abs.", color="blue", linestyle='dashed')
+            self.ax_abs.plot(
+                self.EL,
+                self.abs_exp[:, 1],
+                label="Expt. Abs.",
+                color="blue",
+                linestyle="dashed",
+            )
         except Exception:
             print("no experimental absorption data")
         try:
-            self.ax_fl.plot(self.EL, self.fl_w3.max()*self.fl_exp[:, 1]/self.fl_exp[:, 1].max(), label="Expt. Fl.", color="red", linestyle='dashed')
+            self.ax_fl.plot(
+                self.EL,
+                self.fl_w3.max() * self.fl_exp[:, 1] / self.fl_exp[:, 1].max(),
+                label="Expt. Fl.",
+                color="red",
+                linestyle="dashed",
+            )
         except Exception:
             print("no experimental fluorescence data")
-            
+
         self.ax_fl.set_title("Absorption and Fluorescence Spectra")
         self.ax_fl.set_xlabel("Wavenumber (cm$^{{-1}}$)", fontsize=16)
-        self.ax_fl.set_ylabel("Fluorescence intensity (a.u.)",fontsize=16)
-        self.ax_fl.legend(fontsize=18, loc='upper left')
-        self.ax_fl.tick_params(axis='both', which='major', labelsize=14)
-        self.ax_abs.legend(fontsize=18, loc='upper right')
+        self.ax_fl.set_ylabel("Fluorescence intensity (a.u.)", fontsize=16)
+        self.ax_fl.legend(fontsize=18, loc="upper left")
+        self.ax_fl.tick_params(axis="both", which="major", labelsize=14)
+        self.ax_abs.legend(fontsize=18, loc="upper right")
         self.ax_abs.set_ylabel("Cross Section (Å$^{{2}}$/Molecule)", fontsize=16)
-        self.ax_abs.tick_params(axis='both', which='major', labelsize=14)
+        self.ax_abs.tick_params(axis="both", which="major", labelsize=14)
         self.fig_absfl.show()
 
 
 def raman_residual(param, fit_obj=None):
     """
     Objective function for optimization using lmfit.
-    
+
     Calculates the 'loss' which is a combination of:
     1. Residual sum of squares for Raman excitation profiles.
     2. Correlation between calculated and experimental absorption spectra.
@@ -975,39 +1023,39 @@ def raman_residual(param, fit_obj=None):
     """
     if fit_obj is None:
         fit_obj = load_input()
-        
+
     # Update object parameters from optimizer
     fit_obj.delta = np.array(
         [param.valuesdict()["delta" + str(i)] for i in np.arange(len(fit_obj.delta))]
     )
     fit_obj.gamma = param.valuesdict()["gamma"]
     fit_obj.M = param.valuesdict()["transition_length"]
-    fit_obj.k = param.valuesdict()["kappa"]  
-    fit_obj.theta = param.valuesdict()["theta"]  
-    fit_obj.E0 = param.valuesdict()["E0"]  
-    
+    fit_obj.k = param.valuesdict()["kappa"]
+    fit_obj.theta = param.valuesdict()["theta"]
+    fit_obj.E0 = param.valuesdict()["E0"]
+
     # Run calculation with new parameters
     cross_sections(fit_obj)
-    
+
     # Calculate absorption correlation
     fit_obj.correlation = np.corrcoef(
         np.real(fit_obj.abs_cross), fit_obj.abs_exp[:, 1]
     )[0, 1]
 
     # Calculate Raman residual
-    if fit_obj.profs_exp.ndim == 1:  
+    if fit_obj.profs_exp.ndim == 1:
         fit_obj.profs_exp = np.reshape(fit_obj.profs_exp, (-1, 1))
-        
+
     fit_obj.sigma = np.zeros_like(fit_obj.delta)
     intermediate = (
         1e7 * (np.real(fit_obj.raman_cross[:, fit_obj.rp]) - fit_obj.profs_exp) ** 2
     )
     fit_obj.sigma += intermediate.sum(axis=1)
     fit_obj.total_sigma = np.sum(fit_obj.sigma)
-    
+
     # Total loss = Raman RSS + weighted absorption mismatch
     fit_obj.loss = fit_obj.total_sigma + 30 * (1 - fit_obj.correlation)
-    
+
     # Track history
     if fit_obj.loss_list == []:
         fit_obj.loss_list = [fit_obj.loss]
@@ -1021,14 +1069,14 @@ def raman_residual(param, fit_obj=None):
         fit_obj.sigma_list = [fit_obj.total_sigma]
     else:
         fit_obj.sigma_list.append(fit_obj.total_sigma)
-        
+
     return fit_obj.loss, fit_obj.total_sigma, 100 * (1 - fit_obj.correlation)
 
 
 def param_init(fit_switch, obj=None):
     """
     Initializes lmfit Parameters based on a switching array.
-    
+
     Args:
         fit_switch (list): Binary array indicating which parameters to vary.
         obj: Object containing initial values.
@@ -1039,7 +1087,7 @@ def param_init(fit_switch, obj=None):
     if obj is None:
         obj = load_input()
     params_lmfit = lmfit.Parameters()
-    
+
     # Mode displacements
     for i in range(len(obj.delta)):
         if fit_switch[i] == 1:
@@ -1049,9 +1097,7 @@ def param_init(fit_switch, obj=None):
 
     # Global linewidths and energies
     if fit_switch[len(obj.delta)] == 1:
-        params_lmfit.add(
-            "gamma", value=obj.gamma, min=10, max=1000
-        )
+        params_lmfit.add("gamma", value=obj.gamma, min=10, max=1000)
     else:
         params_lmfit.add("gamma", value=obj.gamma, vary=False)
 
@@ -1063,9 +1109,7 @@ def param_init(fit_switch, obj=None):
         params_lmfit.add("transition_length", value=obj.M, vary=False)
 
     if fit_switch[len(obj.delta) + 2] == 1:
-        params_lmfit.add(
-            "theta", value=obj.theta, min=0, max=10
-        )
+        params_lmfit.add("theta", value=obj.theta, min=0, max=10)
     else:
         params_lmfit.add("theta", value=obj.theta, vary=False)
 
@@ -1085,7 +1129,7 @@ def param_init(fit_switch, obj=None):
 def orca_freq(inp):
     """
     Utility to parse vibrational frequencies from an ORCA output file and save to freqs.dat.
-    
+
     Args:
         inp (str): Path to ORCA output/frequency file.
 
