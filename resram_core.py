@@ -136,10 +136,10 @@ class load_input:
         """
         try:
             with open(self.dir + "inp.txt", "r") as i:
-                self.inp = [l.partition("#")[0].rstrip() for l in i.readlines()]
+                self.inp = [line.partition("#")[0].rstrip() for line in i.readlines()]
         except Exception:
             with open(self.dir + "inp_new.txt", "r") as i:
-                self.inp = [l.partition("#")[0].rstrip() for l in i.readlines()]
+                self.inp = [line.partition("#")[0].rstrip() for line in i.readlines()]
 
         # Physical constants
         self.hbar = 5.3088  # Planck's constant (cm^-1 * ps)
@@ -650,9 +650,9 @@ def run_save(obj, current_time_str):
 
         # Convert REPs to Raman spectra by placing Lorentzians at mode frequencies
         for i, rp in enumerate(obj.rp):
-            for l, wg in enumerate(obj.wg):
+            for j, wg in enumerate(obj.wg):
                 raman_spec[:, i] += (
-                    np.real((raman_cross[l, rp]))
+                    np.real((raman_cross[j, rp]))
                     * (1 / np.pi)
                     * (0.5 * obj.res)
                     / ((obj.rshift - wg) ** 2 + (0.5 * obj.res) ** 2)
@@ -791,9 +791,9 @@ class resram_data:
             )
             self.raman_spec = np.zeros((len(self.obj.rshift), len(self.obj.rpumps)))
             for i, rp in enumerate(self.obj.rp):
-                for l, wg in enumerate(self.obj.wg):
+                for j, wg in enumerate(self.obj.wg):
                     self.raman_spec[:, i] += (
-                        np.real((raman_cross[l, rp]))
+                        np.real((raman_cross[j, rp]))
                         * (1 / np.pi)
                         * (0.5 * self.obj.res)
                         / ((self.obj.rshift - wg) ** 2 + (0.5 * self.obj.res) ** 2)
