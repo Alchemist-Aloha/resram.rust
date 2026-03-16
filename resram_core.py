@@ -540,6 +540,30 @@ def cross_sections(obj):
         (max(len(obj.E0_range), len(obj.EL)) - min(len(obj.E0_range), len(obj.EL)) + 1),
     )
 
+    if HAS_RUST and obj.order == 1:
+        abs_c, fl_c, ram_c = resram_rust.cross_sections_rust(
+            obj.wg,
+            obj.S,
+            obj.eta,
+            obj.delta,
+            obj.th,
+            obj.EL,
+            obj.convEL,
+            obj.E0_range,
+            obj.D,
+            obj.L,
+            obj.beta,
+            obj.E0,
+            obj.M,
+            obj.preA,
+            obj.preF,
+            obj.preR,
+            obj.theta,
+            obj.ts,
+        )
+        obj.abs_cross, obj.fl_cross, obj.raman_cross = abs_c, fl_c, ram_c
+        return obj.abs_cross, obj.fl_cross, obj.raman_cross, obj.boltz_state, obj.boltz_coef
+
     # Work arrays
     q_r = np.ones((len(obj.wg), len(obj.wg), len(obj.th)), dtype=complex)
     K_r = np.zeros((len(obj.wg), len(obj.EL), len(obj.th)), dtype=complex)
@@ -1041,6 +1065,47 @@ def raman_residual(param, fit_obj=None):
     fit_obj.theta = param.valuesdict()["theta"]
     fit_obj.E0 = param.valuesdict()["E0"]
 
+    if HAS_RUST and fit_obj.order == 1:
+        if fit_obj.profs_exp.ndim == 1:
+            fit_obj.profs_exp = np.reshape(fit_obj.profs_exp, (-1, 1))
+        
+        loss, sigma, mismatch = resram_rust.raman_residual_rust(
+            fit_obj.wg,
+            fit_obj.eta,
+            fit_obj.delta,
+            fit_obj.th,
+            fit_obj.EL,
+            fit_obj.convEL,
+            fit_obj.E0_range,
+            fit_obj.abs_exp[:, 1],
+            fit_obj.profs_exp,
+            fit_obj.rp.astype(np.uintp),
+            fit_obj.gamma,
+            fit_obj.M,
+            fit_obj.k,
+            fit_obj.theta,
+            fit_obj.E0,
+            fit_obj.beta,
+            fit_obj.preA,
+            fit_obj.preF,
+            fit_obj.preR,
+            fit_obj.ts,
+        )
+        fit_obj.loss = loss
+        fit_obj.total_sigma = sigma
+        fit_obj.correlation = 1.0 - mismatch / 100.0
+
+        # Track history
+        if not hasattr(fit_obj, 'loss_list'): fit_obj.loss_list = []
+        if not hasattr(fit_obj, 'correlation_list'): fit_obj.correlation_list = []
+        if not hasattr(fit_obj, 'sigma_list'): fit_obj.sigma_list = []
+        
+        fit_obj.loss_list.append(fit_obj.loss)
+        fit_obj.correlation_list.append(fit_obj.correlation)
+        fit_obj.sigma_list.append(fit_obj.total_sigma)
+        print("Rust optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
+        return fit_obj.loss, fit_obj.total_sigma, mismatch
+
     # Run calculation with new parameters
     cross_sections(fit_obj)
 
@@ -1076,7 +1141,7 @@ def raman_residual(param, fit_obj=None):
         fit_obj.sigma_list = [fit_obj.total_sigma]
     else:
         fit_obj.sigma_list.append(fit_obj.total_sigma)
-
+    print("Optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
     return fit_obj.loss, fit_obj.total_sigma, 100 * (1 - fit_obj.correlation)
 
 

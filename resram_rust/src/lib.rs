@@ -211,6 +211,7 @@ fn raman_residual_rust(
 
 #[pyfunction]
 fn cross_sections_rust(
+    py: Python<'_>,
     wg: PyReadonlyArray1<f64>,
     s_factors: PyReadonlyArray1<f64>,
     eta: PyReadonlyArray1<f64>,
@@ -236,17 +237,15 @@ fn cross_sections_rust(
         d, l, beta, e0, m, pre_a, pre_f, pre_r, theta, dt
     );
 
-    Python::with_gil(|py| {
-        Ok((
-            abs_cross.into_pyarray(py).to_owned(),
-            fl_cross.into_pyarray(py).to_owned(),
-            raman_cross.into_pyarray(py).to_owned(),
-        ))
-    })
+    Ok((
+        abs_cross.into_pyarray(py).unbind(),
+        fl_cross.into_pyarray(py).unbind(),
+        raman_cross.into_pyarray(py).unbind(),
+    ))
 }
 
 #[pymodule]
-fn resram_rust(_py: Python, m: &PyModule) -> PyResult<()> {
+fn resram_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cross_sections_rust, m)?)?;
     m.add_function(wrap_pyfunction!(raman_residual_rust, m)?)?;
     Ok(())
