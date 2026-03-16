@@ -1103,7 +1103,7 @@ def raman_residual(param, fit_obj=None):
         fit_obj.loss_list.append(fit_obj.loss)
         fit_obj.correlation_list.append(fit_obj.correlation)
         fit_obj.sigma_list.append(fit_obj.total_sigma)
-        print("Rust optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
+        # print("Rust optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
         return fit_obj.loss, fit_obj.total_sigma, mismatch
 
     # Run calculation with new parameters
@@ -1141,7 +1141,7 @@ def raman_residual(param, fit_obj=None):
         fit_obj.sigma_list = [fit_obj.total_sigma]
     else:
         fit_obj.sigma_list.append(fit_obj.total_sigma)
-    print("Optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
+    # print("Optimization step: Loss =", fit_obj.loss, "Sigma =", fit_obj.total_sigma, "Correlation =", fit_obj.correlation)
     return fit_obj.loss, fit_obj.total_sigma, 100 * (1 - fit_obj.correlation)
 
 

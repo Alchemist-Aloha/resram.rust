@@ -33,7 +33,32 @@ Before running the code, you need a few things installed:
 
 ---
 
-## 2. What does this program actually do? 🤔
+## 3. Optional: Rust Acceleration ⚡
+
+This project includes an optional **Rust backend** (`resram_rust`) that drastically speeds up the rigorous integration calculations required for resonance Raman cross sections. When compiled, the Rust extension provides a **~4x performance speedup** while maintaining numerical consistency with the Python implementation.
+
+### How to Compile the Rust Backend
+
+1. **Install Rust:** Download and install Rust via [rustup.rs](https://rustup.rs/):
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+2. **Build the extension:** Navigate to the `resram_rust` directory and compile:
+   ```bash
+   cd resram_rust
+   cargo build --release
+   cd ..
+   ```
+3. **Copy the shared library:** Move the compiled library into your working directory where the notebook or scripts will run.
+   * **Linux:** `cp resram_rust/target/release/libresram_rust.so ./resram_rust.so`
+   * **macOS:** `cp resram_rust/target/release/libresram_rust.dylib ./resram_rust.so`
+   * **Windows:** `copy resram_rust\target\release\resram_rust.dll .\resram_rust.pyd`
+
+Once the compiled file is in the root project folder, the Python engine (`resram_core.py`) will automatically detect it and seamlessly offload calculations to the faster Rust engine!
+
+---
+
+## 4. What does this program actually do? 🤔
 
 Imagine you have a molecule (like Bodipy). When you hit it with a laser, it vibrates. This program:
 1.  **Calculates** how that molecule should look in an Absorption or Raman spectrum based on "Displacements" (how much the molecule's shape changes when it's excited).
@@ -42,7 +67,7 @@ Imagine you have a molecule (like Bodipy). When you hit it with a laser, it vibr
 
 ---
 
-## 3. The Important Files 📂
+## 5. The Important Files 📂
 
 The program looks for specific files in its folder. Here is what you need to know:
 
@@ -57,7 +82,7 @@ The program looks for specific files in its folder. Here is what you need to kno
 
 ---
 
-## 4. How to Run It 🚀
+## 6. How to Run It 🚀
 
 1.  Open the file **`FSRSanalysis_v2.ipynb`** in your Notebook editor.
 2.  The notebook is divided into "Cells." You can run a cell by clicking the **Play** button next to it.
@@ -67,7 +92,7 @@ The program looks for specific files in its folder. Here is what you need to kno
 
 ---
 
-## 5. Understanding the Results 📊
+## 7. Understanding the Results 📊
 
 When the program finishes, it creates a folder named with the current date (e.g., `2026-03-12_data`). Inside, you will find:
 *   **`Abs.dat` / `Fl.dat`**: The calculated Absorption and Fluorescence spectra.
@@ -90,5 +115,3 @@ Piontkowski, Z. (2020). Excited state torsions and electron transfer in dye-sens
 Sandoval, J. S., & McCamant, D. W. (2023). The best models of Bodipy’s electronic excited state: comparing predictions from various DFT functionals with measurements from femtosecond stimulated Raman spectroscopy. The Journal of Physical Chemistry A, 127(39), 8238-8251.
 
 Li, B., Johnson, A. E., Mukamel, S., & Myers, A. B. (1994). The Brownian oscillator model for solvation effects in spontaneous light emission and their relationship to electron transfer. Journal of the American Chemical Society, 116(24), 11039-11047.
-
-

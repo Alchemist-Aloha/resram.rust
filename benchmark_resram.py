@@ -13,7 +13,7 @@ def benchmark():
     params = param_init(fit_switch, fit_obj)
     
     # Iterations for averaging
-    n_iters = 20
+    n_iters = 100
     
     print(f"\n--- Running Benchmark ({n_iters} iterations) ---")
 

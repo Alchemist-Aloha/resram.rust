@@ -5,6 +5,28 @@ use pyo3::prelude::*;
 use std::f64::consts::PI;
 use rayon::prelude::*;
 
+/// Implements a "valid" convolution similar to np.convolve(a, v, 'valid')
+fn convolve_valid(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
+    let (a, v) = if input.len() >= kernel.len() {
+        (input, kernel)
+    } else {
+        (kernel, input)
+    };
+    let n = a.len();
+    let m = v.len();
+    let out_len = n - m + 1;
+    let mut output = Array1::zeros(out_len);
+    for i in 0..out_len {
+        let mut sum = 0.0;
+        for j in 0..m {
+            // v[m-1-j] effectively reverses the kernel, matching np.convolve
+            sum += a[i + j] * v[m - 1 - j];
+        }
+        output[i] = sum;
+    }
+    output
+}
+
 fn calculate_cross_sections(
     wg: &ArrayView1<f64>,
     s_factors: &ArrayView1<f64>,
@@ -23,53 +45,64 @@ fn calculate_cross_sections(
     pre_f: f64,
     pre_r: f64,
     theta: f64,
-    dt: f64,
+    _dt_unused: f64, // Spacing is calculated from 'th' to ensure consistency with np.trapz
 ) -> (Array1<f64>, Array1<f64>, Array2<f64>) {
     let th_len = th.len();
-    let el_len = el.len();
+    let el_full_len = el.len();
     let wg_len = wg.len();
+    
+    // Spacing for trapezoidal integration
+    // Python's np.trapezoid defaults to dx=1.0 when x is not provided
+    let d_th = 1.0;
 
-    // 1. Calculate g(t)
-    let g_t: Vec<Complex64> = th.iter().map(|&t| {
-        let term1 = (d / l).powi(2) * (l * t - 1.0 + (-l * t).exp());
-        let term2 = (beta * d.powi(2)) / (2.0 * l) * (1.0 - (-l * t).exp());
-        Complex64::new(term1, term2)
-    }).collect();
+    // 1. Pre-calculate time-dependent Kernels (Trapezoidal weighted)
+    // kernel = A(t) * exp(-g(t)) * weight
+    let mut kernels = Vec::with_capacity(th_len);
+    let mut kernels_f = Vec::with_capacity(th_len);
 
-    // 2. Calculate A(t)
-    let a_t: Vec<Complex64> = th.iter().map(|&t| {
+    for j in 0..th_len {
+        let t = th[j];
+        
+        // g(t)
+        let g_real = (d / l).powi(2) * (l * t - 1.0 + (-l * t).exp());
+        let g_imag = (beta * d.powi(2)) / (2.0 * l) * (1.0 - (-l * t).exp());
+        let g_t = Complex64::new(g_real, g_imag);
+
+        // A(t)
         let mut sum_k = Complex64::new(0.0, 0.0);
         for i in 0..wg_len {
             let k_k = (1.0 + eta[i]) * s_factors[i] * (1.0 - Complex64::from_polar(1.0, -wg[i] * t))
                     + eta[i] * s_factors[i] * (1.0 - Complex64::from_polar(1.0, wg[i] * t));
             sum_k += k_k;
         }
-        Complex64::from_polar(m.powi(2), 0.0) * (-sum_k).exp()
-    }).collect();
-
-    // 3. Kernels and Integration
-    let mut integ_a = Array1::<f64>::zeros(el_len);
-    let mut integ_f = Array1::<f64>::zeros(el_len);
-
-    for i in 0..el_len {
-        let mut sum_a = Complex64::new(0.0, 0.0);
-        let mut sum_f = Complex64::new(0.0, 0.0);
-        for j in 0..th_len {
-            let phase = (el[i] - e0) * th[j];
-            let exp_phase = Complex64::from_polar(1.0, phase);
-            let val_a = exp_phase * (-g_t[j]).exp() * a_t[j];
-            let val_f = exp_phase * g_t[j].conj().exp() * a_t[j].conj();
-            let weight = if j == 0 || j == th_len - 1 { 0.5 } else { 1.0 };
-            sum_a += val_a * weight;
-            sum_f += val_f * weight;
-        }
-        integ_a[i] = (sum_a * dt).re;
-        integ_f[i] = (sum_f * dt).re;
+        let a_t = Complex64::new(m.powi(2), 0.0) * (-sum_k).exp();
+        
+        let weight = if j == 0 || j == th_len - 1 { 0.5 } else { 1.0 };
+        kernels.push(a_t * (-g_t).exp() * weight);
+        kernels_f.push(a_t.conj() * (-g_t).conj().exp() * weight);
     }
 
-    // 4. Inhomogeneous broadening H
-    let h: Array1<f64> = if theta == 0.0 {
-        Array1::ones(e0_range.len())
+    // 2. Absorption and Fluorescence Integrals (over full EL grid)
+    let (integ_a_vec, integ_f_vec): (Vec<f64>, Vec<f64>) = (0..el_full_len).into_par_iter().map(|i| {
+        let energy = el[i];
+        let mut sum_a = Complex64::new(0.0, 0.0);
+        let mut sum_f = Complex64::new(0.0, 0.0);
+        
+        for j in 0..th_len {
+            let phase = (energy - e0) * th[j];
+            let exp_phase = Complex64::from_polar(1.0, phase);
+            sum_a += exp_phase * kernels[j];
+            sum_f += exp_phase * kernels_f[j];
+        }
+        
+        ((sum_a * d_th).re, (sum_f * d_th).re)
+    }).unzip();
+
+    // 3. Inhomogeneous Broadening Kernel H
+    let h: Array1<f64> = if theta < 1e-10 {
+        let mut h_delta = Array1::from_elem(e0_range.len(), 0.0);
+        h_delta[e0_range.len() / 2] = 1.0;
+        h_delta
     } else {
         e0_range.mapv(|val| {
             (1.0 / (theta * (2.0 * PI).sqrt())) * (-val.powi(2) / (2.0 * theta.powi(2))).exp()
@@ -77,46 +110,39 @@ fn calculate_cross_sections(
     };
     let h_sum: f64 = h.sum();
 
-    // 5. Convolution
-    fn convolve_valid(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
-        let n = input.len();
-        let m = kernel.len();
-        if n < m { return Array1::zeros(0); }
-        let out_len = n - m + 1;
-        let mut output = Array1::zeros(out_len);
-        for i in 0..out_len {
-            let mut sum = 0.0;
-            for j in 0..m {
-                sum += input[i + j] * kernel[m - 1 - j];
-            }
-            output[i] = sum;
-        }
-        output
+    // 4. Convolution and Final Scaling for Abs/Fl
+    let abs_conv = convolve_valid(&Array1::from_vec(integ_a_vec), &h) / h_sum;
+    let fl_conv = convolve_valid(&Array1::from_vec(integ_f_vec), &h) / h_sum;
+    
+    let mut abs_cross = Array1::<f64>::zeros(conv_el.len());
+    let mut fl_cross = Array1::<f64>::zeros(conv_el.len());
+    for i in 0..conv_el.len() {
+        abs_cross[i] = abs_conv[i] * pre_a * conv_el[i];
+        fl_cross[i] = fl_conv[i] * pre_f * conv_el[i];
     }
 
-    let abs_cross = convolve_valid(&integ_a, &h) / h_sum * pre_a * conv_el;
-    let fl_cross = convolve_valid(&integ_f, &h) / h_sum * pre_f * conv_el;
-
-    // 6. Raman
+    // 5. Raman Cross Sections (Parallelized over modes)
     let raman_cross_vec: Vec<Array1<f64>> = (0..wg_len).into_par_iter().map(|idx| {
-        let mut integ_r = Array1::<f64>::zeros(el_len);
-        let sqrt2 = 2.0f64.sqrt();
-        let factor = ((1.0 + eta[idx]).sqrt() * delta[idx]) / sqrt2;
-        for i in 0..el_len {
+        let mut integ_r_mag_sq = Array1::<f64>::zeros(el_full_len);
+        let factor = ((1.0 + eta[idx]).sqrt() * delta[idx]) / 2.0f64.sqrt();
+        
+        for i in 0..el_full_len {
+            let energy = el[i];
             let mut sum_r = Complex64::new(0.0, 0.0);
             for j in 0..th_len {
-                let phase = (el[i] - e0) * th[j];
+                let phase = (energy - e0) * th[j];
                 let exp_phase = Complex64::from_polar(1.0, phase);
                 let q_r = factor * (1.0 - Complex64::from_polar(1.0, -wg[idx] * th[j]));
-                let val_r = exp_phase * (-g_t[j]).exp() * a_t[j] * q_r;
-                let weight = if j == 0 || j == th_len - 1 { 0.5 } else { 1.0 };
-                sum_r += val_r * weight;
+                sum_r += exp_phase * kernels[j] * q_r;
             }
-            integ_r[i] = (sum_r * dt).norm_sqr();
+            // Magnitude squared BEFORE convolution (matching Python)
+            integ_r_mag_sq[i] = (sum_r * d_th).norm_sqr();
         }
-        let conv_r = convolve_valid(&integ_r, &h) / h_sum;
+        
+        let conv_r = convolve_valid(&integ_r_mag_sq, &h) / h_sum;
         let mut final_r = Array1::<f64>::zeros(conv_el.len());
         for k in 0..conv_el.len() {
+            // obj.preR * convEL * (convEL - wg)**3 * conv_result
             final_r[k] = pre_r * conv_el[k] * (conv_el[k] - wg[idx]).powi(3) * conv_r[k];
         }
         final_r
@@ -194,9 +220,6 @@ fn raman_residual_rust(
     
     let mut total_sigma = 0.0;
     for (idx, &mode_rp) in rp.iter().enumerate() {
-        // Raman cross is (modes, energies)
-        // profs_exp is (modes, pumps)
-        // We need raman_cross[mode, rp[pump]]
         for mode_idx in 0..wg.len() {
             let diff = raman_cross[[mode_idx, mode_rp]] - profs_exp[[mode_idx, idx]];
             total_sigma += 1e7 * diff.powi(2);
