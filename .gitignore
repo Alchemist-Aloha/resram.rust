@@ -4,6 +4,7 @@ test.ipynb
 # Do not ship old c_matrix*.c files, due to
 # compatibility problems with newer numpy versions
 *.c
+resram_rust.dll
 *.svg
 #data output files
 *_data/
