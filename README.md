@@ -1,4 +1,4 @@
-# ResRAM: Resonance Raman Excitation Profile Analysis 🧪
+# ResRAM_NG: Resonance Raman Excitation Profile Analysis 🧪
 
 Welcome! This program helps scientists calculate and "fit" (match) theoretical models to experimental data from **Resonance Raman Spectroscopy**. 
 
