@@ -1,0 +1,16 @@
+gamma = 732.0
+theta = 1.0
+e0 = 17250.0
+kappa = 0.1
+time_step = 0.0005
+n_time = 200
+el_reach = 20000.0
+m = 1.8087809922025966
+n = 1.33
+raman_start = 0.0
+raman_end = 2500.0
+raman_step = 2.0
+raman_res = 20.0
+temp = 298.0
+convergence = 1.0
+boltz_toggle = false

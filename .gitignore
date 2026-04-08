@@ -14,7 +14,7 @@ resram_rust.dll
 dask-worker-space/
 
 # virtualenv
-bin/
+/bin/
 pyvenv.cfg
 /.venv*
 /venv*

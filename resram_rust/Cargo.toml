@@ -7,6 +7,10 @@ edition = "2021"
 name = "resram_rust"
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "resram-cli"
+path = "src/bin/resram-cli.rs"
+
 [dependencies]
 ndarray = "0.15"
 num-complex = "0.4"
