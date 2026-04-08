@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import Plot from "react-plotly.js";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Settings, Play, Activity, FolderOpen, Save, List } from "lucide-react";
 import "./App.css";
 
@@ -29,19 +30,35 @@ interface SimulationResult {
   conv_el: number[];
 }
 
+interface ProgressPayload {
+  iteration: number;
+  loss: number;
+  parameters: number[];
+}
+
 function App() {
   const [config, setConfig] = useState<ResRamConfig | null>(null);
   const [modes, setModes] = useState<VibrationalMode[]>([]);
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [dir, setDir] = useState("");
   const [status, setStatus] = useState("Ready");
+  const [progress, setProgress] = useState<ProgressPayload | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<ProgressPayload>("fit-progress", (event) => {
+      setProgress(event.payload);
+      setStatus(`Fitting: Iteration ${event.payload.iteration}, Loss: ${event.payload.loss.toExponential(4)}`);
+    });
+    return () => {
+      unlisten.then(f => f());
+    };
+  }, []);
 
   async function openFolder() {
     const path = prompt("Enter data folder path:", ".");
     if (path) {
       try {
         const loadedConfig = await invoke<ResRamConfig>("load_data", { dir: path });
-        // Also need modes
         const [loadedModes, _] = await invoke<[VibrationalMode[], number[]]>("load_vibrational_data_cmd", { dir: path });
         
         setConfig(loadedConfig);
@@ -61,6 +78,31 @@ function App() {
       const res = await invoke<SimulationResult>("run_calculation", { config, modes });
       setResult(res);
       setStatus("Calculation complete");
+    } catch (e) {
+      setStatus(`Error: ${e}`);
+    }
+  }
+
+  async function startFit() {
+    if (!config || modes.length === 0) return;
+    setStatus("Starting fit...");
+    try {
+      // For now, fit all deltas and gamma
+      const fitIndices = modes.map((_, i) => i);
+      const resConfig = await invoke<ResRamConfig>("run_fit", {
+        dir,
+        config,
+        modes,
+        fitIndices,
+        fitGamma: true,
+        fitM: false,
+        fitTheta: false,
+        algorithmName: "powell",
+        maxEval: 1000,
+      });
+      setConfig(resConfig);
+      setStatus("Fitting complete");
+      runCalc(); // Refresh plots
     } catch (e) {
       setStatus(`Error: ${e}`);
     }
@@ -118,7 +160,7 @@ function App() {
         <div className="sidebar-actions">
           <button onClick={openFolder} title="Open Workspace"><FolderOpen size={18} /> Open Folder</button>
           <button onClick={runCalc} disabled={!config}><Play size={18} /> Run Calc</button>
-          <button className="primary" disabled={!config}><Activity size={18} /> Start Fit</button>
+          <button className="primary" onClick={startFit} disabled={!config}><Activity size={18} /> Start Fit</button>
         </div>
       </nav>
 
