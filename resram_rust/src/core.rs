@@ -2,6 +2,7 @@ use ndarray::prelude::*;
 use num_complex::Complex64;
 use std::f64::consts::PI;
 use rayon::prelude::*;
+use crate::models::{ResRamConfig, VibrationalMode, SimulationResult};
 
 /// Implements a "valid" convolution similar to np.convolve(a, v, 'valid')
 pub fn convolve_valid(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
@@ -152,6 +153,51 @@ pub fn calculate_cross_sections(
     }
 
     (abs_cross, fl_cross, raman_cross)
+}
+
+pub fn compute_spectra(
+    config: &ResRamConfig,
+    modes: &[VibrationalMode],
+    th: &ArrayView1<f64>,
+    el: &ArrayView1<f64>,
+    conv_el: &ArrayView1<f64>,
+    e0_range: &ArrayView1<f64>,
+) -> SimulationResult {
+    let wg: Array1<f64> = modes.iter().map(|m| m.frequency).collect();
+    let delta: Array1<f64> = modes.iter().map(|m| m.displacement).collect();
+    let s_factors = delta.mapv(|d| d.powi(2) / 2.0);
+    
+    let k_b_t = 0.695 * config.temp;
+    let eta: Array1<f64> = if config.temp > 0.1 {
+        wg.mapv(|w| 1.0 / ((w / k_b_t).exp() - 1.0))
+    } else {
+        Array1::zeros(wg.len())
+    };
+
+    let d_param = config.gamma * (1.0 + 0.85 * config.kappa + 0.88 * config.kappa.powi(2)) / (2.355 + 1.76 * config.kappa);
+    let l_param = config.kappa * d_param;
+
+    // Prefactors (simplified or taken from config if we add them there)
+    // For now, use some defaults or placeholder prefactors
+    let n = config.n;
+    let ts = config.time_step;
+    let pre_a = ((5.744e-3) / n) * ts;
+    let pre_f = pre_a * n.powi(2);
+    let pre_r = 2.08e-20 * ts.powi(2); // Simplified
+
+    let (abs_cross, fl_cross, raman_cross) = calculate_cross_sections(
+        &wg.view(), &s_factors.view(), &eta.view(), &delta.view(),
+        th, el, conv_el, e0_range,
+        d_param, l_param, 1.0 / k_b_t, config.e0, config.m,
+        pre_a, pre_f, pre_r, config.theta, ts
+    );
+
+    SimulationResult {
+        abs_cross: abs_cross.to_vec(),
+        fl_cross: fl_cross.to_vec(),
+        raman_cross: raman_cross.rows().into_iter().map(|r| r.to_vec()).collect(),
+        conv_el: conv_el.to_vec(),
+    }
 }
 
 pub fn corrcoef(x: &ArrayView1<f64>, y: &ArrayView1<f64>) -> f64 {
