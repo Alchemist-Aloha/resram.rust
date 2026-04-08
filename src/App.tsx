@@ -1,50 +1,95 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
+import { useState, useEffect } from "react";
+import Plot from "react-plotly.js";
 import { invoke } from "@tauri-apps/api/core";
+import { Settings, Play, Activity, FolderOpen, Save } from "lucide-react";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+interface ResRamConfig {
+  gamma: number;
+  theta: number;
+  e0: number;
+  kappa: number;
+  m: number;
+  n: number;
+  temp: number;
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [config, setConfig] = useState<ResRamConfig | null>(null);
+  const [dir, setDir] = useState("");
+  const [status, setStatus] = useState("Ready");
+
+  async function openFolder() {
+    // In a real Tauri app, you'd use the dialog plugin. 
+    // For now, we'll manually enter the path or use a placeholder.
+    const path = prompt("Enter data folder path:", ".");
+    if (path) {
+      try {
+        const loadedConfig = await invoke<ResRamConfig>("load_data", { dir: path });
+        setConfig(loadedConfig);
+        setDir(path);
+        setStatus(`Loaded data from ${path}`);
+      } catch (e) {
+        setStatus(`Error: ${e}`);
+      }
+    }
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div className="container">
+      <nav className="sidebar">
+        <div className="sidebar-header">
+          <h1>ResRAM</h1>
+          <span className="status-badge">{status}</span>
+        </div>
+        
+        <div className="sidebar-section">
+          <h3><Settings size={16} /> Global Params</h3>
+          {config && (
+            <div className="params-grid">
+              <label>Gamma: <input type="number" value={config.gamma} readOnly /></label>
+              <label>Theta: <input type="number" value={config.theta} readOnly /></label>
+              <label>E0: <input type="number" value={config.e0} readOnly /></label>
+              <label>Temp: <input type="number" value={config.temp} readOnly /></label>
+            </div>
+          )}
+        </div>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+        <div className="sidebar-actions">
+          <button onClick={openFolder}><FolderOpen size={18} /> Open Folder</button>
+          <button disabled={!config}><Play size={18} /> Run Calc</button>
+          <button className="primary" disabled={!config}><Activity size={18} /> Start Fit</button>
+        </div>
+      </nav>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <main className="content">
+        <div className="plot-container">
+          <Plot
+            data={[
+              {
+                x: [1, 2, 3],
+                y: [2, 6, 3],
+                type: 'scatter',
+                mode: 'lines+markers',
+                marker: { color: 'red' },
+                name: 'Absorption'
+              }
+            ]}
+            layout={{ title: 'Spectra', autosize: true }}
+            useResizeHandler={true}
+            style={{ width: "100%", height: "100%" }}
+          />
+        </div>
+        <div className="plot-container">
+          <Plot
+            data={[]}
+            layout={{ title: 'Raman Excitation Profiles', autosize: true }}
+            useResizeHandler={true}
+            style={{ width: "100%", height: "100%" }}
+          />
+        </div>
+      </main>
+    </div>
   );
 }
 
