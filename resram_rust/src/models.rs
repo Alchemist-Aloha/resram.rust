@@ -31,5 +31,7 @@ pub struct SimulationResult {
     pub abs_cross: Vec<f64>,
     pub fl_cross: Vec<f64>,
     pub raman_cross: Vec<Vec<f64>>, // [mode_idx][energy_idx]
+    pub raman_spec: Vec<Vec<f64>>,  // [pump_idx][rshift_idx]
     pub conv_el: Vec<f64>,
+    pub rshift: Vec<f64>,
 }

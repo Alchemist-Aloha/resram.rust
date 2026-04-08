@@ -21,10 +21,12 @@ pub struct OptimizationContext {
     pub pre_r: f64,
     pub beta: f64,
     pub dt: f64,
-    pub fit_indices: Vec<usize>, // Which deltas to fit
+    pub fit_indices: Vec<usize>, 
     pub fit_gamma: bool,
     pub fit_m: bool,
     pub fit_theta: bool,
+    pub fit_kappa: bool,
+    pub fit_e0: bool,
     pub iteration: u32,
     pub progress_callback: Option<ProgressCallback>,
 }
@@ -54,12 +56,21 @@ fn objective_function(x: &[f64], _gradient: Option<&mut [f64]>, context: &mut Op
         cursor += 1;
     }
 
+    if context.fit_kappa {
+        current_config.kappa = x[cursor];
+        cursor += 1;
+    }
+
+    if context.fit_e0 {
+        current_config.e0 = x[cursor];
+        // cursor += 1; // Last one potentially
+    }
+
     // Calculate loss
     let wg: Array1<f64> = current_modes.iter().map(|m| m.frequency).collect();
     let delta: Array1<f64> = current_modes.iter().map(|m| m.displacement).collect();
     let s_factors = delta.mapv(|d| d.powi(2) / 2.0);
     
-    // Exact thermal factor matching Python: 1 / (exp(wg / kbT) - 1)
     let k_b_t = 0.695 * current_config.temp;
     let eta: Array1<f64> = if current_config.temp > 0.1 {
         wg.mapv(|w| 1.0 / ((w / k_b_t).exp() - 1.0))
@@ -80,11 +91,8 @@ fn objective_function(x: &[f64], _gradient: Option<&mut [f64]>, context: &mut Op
     let correlation = corrcoef(&abs_cross.view(), &context.abs_exp.view());
     
     let mut total_sigma = 0.0;
-    let n_modes_to_compare = wg.len().min(context.profs_exp.nrows());
-    let n_pumps_to_compare = context.rp.len().min(context.profs_exp.ncols());
-
-    for (idx, &mode_rp) in context.rp.iter().take(n_pumps_to_compare).enumerate() {
-        for mode_idx in 0..n_modes_to_compare {
+    for (idx, &mode_rp) in context.rp.iter().enumerate() {
+        for mode_idx in 0..wg.len() {
             let diff = raman_cross[[mode_idx, mode_rp]] - context.profs_exp[[mode_idx, idx]];
             total_sigma += 1e7 * diff.powi(2);
         }
@@ -134,7 +142,23 @@ pub fn run_optimization(
         upper_bounds.push(50.0);
     }
 
+    if context.fit_kappa {
+        initial_x.push(context.config.kappa);
+        lower_bounds.push(0.0);
+        upper_bounds.push(1.0);
+    }
+
+    if context.fit_e0 {
+        initial_x.push(context.config.e0);
+        lower_bounds.push(0.9 * context.config.e0);
+        upper_bounds.push(1.1 * context.config.e0);
+    }
+
     let n_params = initial_x.len();
+    if n_params == 0 {
+        return Err("No parameters selected for fitting".into());
+    }
+
     let mut opt = Nlopt::new(algorithm, n_params, objective_function, Target::Minimize, context);
     
     opt.set_lower_bounds(&lower_bounds).map_err(|e| format!("Failed to set lower bounds: {:?}", e))?;

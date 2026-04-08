@@ -75,3 +75,36 @@ pub fn load_vibrational_data<P: AsRef<Path>>(dir: P) -> Result<(Vec<VibrationalM
 
     Ok((modes, rpumps))
 }
+
+pub fn write_config_txt<P: AsRef<Path>>(path: P, config: &ResRamConfig) -> Result<()> {
+    let mut content = String::new();
+    content.push_str(&format!("{} # gamma linewidth parameter (cm^-1)\n", config.gamma));
+    content.push_str(&format!("{} # theta static inhomogeneous linewidth parameter (cm^-1)\n", config.theta));
+    content.push_str(&format!("{} # E0 (cm^-1)\n", config.e0));
+    content.push_str(&format!("{} # kappa solvent parameter\n", config.kappa));
+    content.push_str(&format!("{} # time step (ps)\n", config.time_step));
+    content.push_str(&format!("{} # number of time steps\n", config.n_time));
+    content.push_str(&format!("{} # range plus and minus E0 to calculate lineshapes\n", config.el_reach));
+    content.push_str(&format!("{} # transition length M (Angstroms)\n", config.m));
+    content.push_str(&format!("{} # refractive index n\n", config.n));
+    content.push_str(&format!("{} # start raman shift axis (cm^-1)\n", config.raman_start));
+    content.push_str(&format!("{} # end raman shift axis (cm^-1)\n", config.raman_end));
+    content.push_str(&format!("{} # rshift axis step size (cm^-1)\n", config.raman_step));
+    content.push_str(&format!("{} # raman spectrum resolution (cm^-1)\n", config.raman_res));
+    content.push_str(&format!("{} # Temperature (K)\n", config.temp));
+    content.push_str(&format!("{} # convergence for sums\n", config.convergence));
+    content.push_str(&format!("{} # Boltz Toggle\n", if config.boltz_toggle { 1 } else { 0 }));
+    
+    fs::write(path, content)?;
+    Ok(())
+}
+
+pub fn save_vibrational_data<P: AsRef<Path>>(dir: P, modes: &[VibrationalMode]) -> Result<()> {
+    let path = dir.as_ref().join("deltas.dat");
+    let content = modes.iter()
+        .map(|m| m.displacement.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(path, content)?;
+    Ok(())
+}

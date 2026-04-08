@@ -18,7 +18,6 @@ pub fn convolve_valid(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> 
     for i in 0..out_len {
         let mut sum = 0.0;
         for j in 0..m {
-            // v[m-1-j] effectively reverses the kernel, matching np.convolve
             sum += a[i + j] * v[m - 1 - j];
         }
         output[i] = sum;
@@ -44,30 +43,25 @@ pub fn calculate_cross_sections(
     pre_f: f64,
     pre_r: f64,
     theta: f64,
-    _dt_unused: f64, // Spacing is calculated from 'th' to ensure consistency with np.trapz
+    _dt: f64,
 ) -> (Array1<f64>, Array1<f64>, Array2<f64>) {
     let th_len = th.len();
     let el_full_len = el.len();
     let wg_len = wg.len();
     
-    // Spacing for trapezoidal integration
-    // Python's np.trapezoid defaults to dx=1.0 when x is not provided
-    let d_th = 1.0;
+    let d_th = 1.0; // Python np.trapezoid default dx=1.0
 
-    // 1. Pre-calculate time-dependent Kernels (Trapezoidal weighted)
-    // kernel = A(t) * exp(-g(t)) * weight
+    // 1. Pre-calculate time-dependent Kernels
     let mut kernels = Vec::with_capacity(th_len);
     let mut kernels_f = Vec::with_capacity(th_len);
 
     for j in 0..th_len {
         let t = th[j];
         
-        // g(t)
         let g_real = (d / l).powi(2) * (l * t - 1.0 + (-l * t).exp());
         let g_imag = (beta * d.powi(2)) / (2.0 * l) * (1.0 - (-l * t).exp());
         let g_t = Complex64::new(g_real, g_imag);
 
-        // A(t)
         let mut sum_k = Complex64::new(0.0, 0.0);
         for i in 0..wg_len {
             let k_k = (1.0 + eta[i]) * s_factors[i] * (1.0 - Complex64::from_polar(1.0, -wg[i] * t))
@@ -81,7 +75,7 @@ pub fn calculate_cross_sections(
         kernels_f.push(a_t.conj() * (-g_t).conj().exp() * weight);
     }
 
-    // 2. Absorption and Fluorescence Integrals (over full EL grid)
+    // 2. Abs/FL Integrals
     let (integ_a_vec, integ_f_vec): (Vec<f64>, Vec<f64>) = (0..el_full_len).into_par_iter().map(|i| {
         let energy = el[i];
         let mut sum_a = Complex64::new(0.0, 0.0);
@@ -97,7 +91,7 @@ pub fn calculate_cross_sections(
         ((sum_a * d_th).re, (sum_f * d_th).re)
     }).unzip();
 
-    // 3. Inhomogeneous Broadening Kernel H
+    // 3. Inhomogeneous Broadening H
     let h: Array1<f64> = if theta < 1e-10 {
         let mut h_delta = Array1::from_elem(e0_range.len(), 0.0);
         h_delta[e0_range.len() / 2] = 1.0;
@@ -109,7 +103,7 @@ pub fn calculate_cross_sections(
     };
     let h_sum: f64 = h.sum();
 
-    // 4. Convolution and Final Scaling for Abs/Fl
+    // 4. Abs/FL Results
     let abs_conv = convolve_valid(&Array1::from_vec(integ_a_vec), &h) / h_sum;
     let fl_conv = convolve_valid(&Array1::from_vec(integ_f_vec), &h) / h_sum;
     
@@ -117,10 +111,12 @@ pub fn calculate_cross_sections(
     let mut fl_cross = Array1::<f64>::zeros(conv_el.len());
     for i in 0..conv_el.len() {
         abs_cross[i] = abs_conv[i] * pre_a * conv_el[i];
+        // FL has a correction EL^2 / E0^2 in Python plot but not in core cross_sections.
+        // We'll apply it in compute_spectra to match the plot logic.
         fl_cross[i] = fl_conv[i] * pre_f * conv_el[i];
     }
 
-    // 5. Raman Cross Sections (Parallelized over modes)
+    // 5. Raman REPs
     let raman_cross_vec: Vec<Array1<f64>> = (0..wg_len).into_par_iter().map(|idx| {
         let mut integ_r_mag_sq = Array1::<f64>::zeros(el_full_len);
         let factor = ((1.0 + eta[idx]).sqrt() * delta[idx]) / 2.0f64.sqrt();
@@ -134,14 +130,12 @@ pub fn calculate_cross_sections(
                 let q_r = factor * (1.0 - Complex64::from_polar(1.0, -wg[idx] * th[j]));
                 sum_r += exp_phase * kernels[j] * q_r;
             }
-            // Magnitude squared BEFORE convolution (matching Python)
             integ_r_mag_sq[i] = (sum_r * d_th).norm_sqr();
         }
         
         let conv_r = convolve_valid(&integ_r_mag_sq, &h) / h_sum;
         let mut final_r = Array1::<f64>::zeros(conv_el.len());
         for k in 0..conv_el.len() {
-            // obj.preR * convEL * (convEL - wg)**3 * conv_result
             final_r[k] = pre_r * conv_el[k] * (conv_el[k] - wg[idx]).powi(3) * conv_r[k];
         }
         final_r
@@ -158,6 +152,7 @@ pub fn calculate_cross_sections(
 pub fn compute_spectra(
     config: &ResRamConfig,
     modes: &[VibrationalMode],
+    rpumps: &[f64],
     th: &ArrayView1<f64>,
     el: &ArrayView1<f64>,
     conv_el: &ArrayView1<f64>,
@@ -168,6 +163,7 @@ pub fn compute_spectra(
     let s_factors = delta.mapv(|d| d.powi(2) / 2.0);
     
     let k_b_t = 0.695 * config.temp;
+    let beta = if config.temp > 0.1 { 1.0 / k_b_t } else { 1e10 };
     let eta: Array1<f64> = if config.temp > 0.1 {
         wg.mapv(|w| 1.0 / ((w / k_b_t).exp() - 1.0))
     } else {
@@ -177,26 +173,67 @@ pub fn compute_spectra(
     let d_param = config.gamma * (1.0 + 0.85 * config.kappa + 0.88 * config.kappa.powi(2)) / (2.355 + 1.76 * config.kappa);
     let l_param = config.kappa * d_param;
 
-    // Prefactors (simplified or taken from config if we add them there)
-    // For now, use some defaults or placeholder prefactors
     let n = config.n;
     let ts = config.time_step;
     let pre_a = ((5.744e-3) / n) * ts;
     let pre_f = pre_a * n.powi(2);
-    let pre_r = 2.08e-20 * ts.powi(2); // Simplified
+    let pre_r = 2.08e-20 * ts.powi(2);
 
-    let (abs_cross, fl_cross, raman_cross) = calculate_cross_sections(
+    let (abs_cross, mut fl_cross, raman_cross) = calculate_cross_sections(
         &wg.view(), &s_factors.view(), &eta.view(), &delta.view(),
         th, el, conv_el, e0_range,
-        d_param, l_param, 1.0 / k_b_t, config.e0, config.m,
+        d_param, l_param, beta, config.e0, config.m,
         pre_a, pre_f, pre_r, config.theta, ts
     );
+
+    // Apply FL w3 correction: fl * convEL^2 / E0^2
+    for i in 0..conv_el.len() {
+        fl_cross[i] = fl_cross[i] * (conv_el[i].powi(2) / config.e0.powi(2));
+    }
+
+    // Generate Raman Shift axis
+    let rshift: Vec<f64> = (0..)
+        .map(|i| config.raman_start + (i as f64) * config.raman_step)
+        .take_while(|&v| v < config.raman_end)
+        .collect();
+    let rshift_arr = Array1::from_vec(rshift.clone());
+
+    // Generate Raman Spectra for each pump
+    let mut raman_spec = Vec::new();
+    for &pump in rpumps {
+        // Find index of pump in conv_el
+        let mut min_diff = f64::MAX;
+        let mut pump_idx = 0;
+        for (i, &e) in conv_el.iter().enumerate() {
+            let diff = (e - pump).abs();
+            if diff < min_diff {
+                min_diff = diff;
+                pump_idx = i;
+            }
+        }
+
+        let mut spec = Array1::zeros(rshift_arr.len());
+        for j in 0..wg.len() {
+            let intensity = raman_cross[[j, pump_idx]];
+            let mode_freq = wg[j];
+            let res = config.raman_res;
+            
+            // Lorentzian: (1/PI) * (0.5*res) / ((rshift - wg)^2 + (0.5*res)^2)
+            let lor = rshift_arr.mapv(|rs| {
+                (1.0 / PI) * (0.5 * res) / ((rs - mode_freq).powi(2) + (0.5 * res).powi(2))
+            });
+            spec += &(lor * intensity);
+        }
+        raman_spec.push(spec.to_vec());
+    }
 
     SimulationResult {
         abs_cross: abs_cross.to_vec(),
         fl_cross: fl_cross.to_vec(),
         raman_cross: raman_cross.rows().into_iter().map(|r| r.to_vec()).collect(),
+        raman_spec,
         conv_el: conv_el.to_vec(),
+        rshift,
     }
 }
 
@@ -215,7 +252,7 @@ pub fn corrcoef(x: &ArrayView1<f64>, y: &ArrayView1<f64>) -> f64 {
         den_x += dx * dx;
         den_y += dy * dy;
     }
-    let den = (den_x.sqrt() * den_y.sqrt());
+    let den = den_x.sqrt() * den_y.sqrt();
     if den == 0.0 { return 0.0; }
     num / den
 }

@@ -26,5 +26,7 @@ resram_rust = { path = "../resram_rust" }
 nlopt = "0.7"
 ndarray = "0.15"
 tokio = { version = "1", features = ["full"] }
+chrono = "0.4"
+toml = "0.8"
 
 

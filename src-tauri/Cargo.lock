@@ -307,8 +307,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c673075a2e0e5f4a1dde27ce9dee1ea4558c7ffe648f576438a20ca1d2acc4b0"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link 0.2.1",
 ]
 
@@ -2954,6 +2956,7 @@ dependencies = [
 name = "resram-tauri"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ndarray",
  "nlopt",
  "resram_rust",
@@ -2963,6 +2966,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tokio",
+ "toml 0.8.2",
 ]
 
 [[package]]
