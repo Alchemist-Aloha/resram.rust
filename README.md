@@ -1,109 +1,76 @@
 # ResRAM_NG: Resonance Raman Excitation Profile Analysis 🧪
 
-Welcome! This program helps scientists calculate and "fit" (match) theoretical models to experimental data from **Resonance Raman Spectroscopy**. 
+ResRAM is a standalone, high-performance theoretical framework and software tool for benchmarking DFT functionals against experimental Femtosecond Stimulated Raman Spectroscopy (FSRS) data.
 
-It implements the Independent Mode Displaced Harmonic Oscillator (IMDHO) formalism and Brownian oscillator theory to benchmark DFT functionals against experimental Femtosecond Stimulated Raman Spectroscopy (FSRS) data.
-
----
-
-## 1. Quick Start (GUI) 🚀
-
-The easiest way to use ResRAM is through the interactive graphical interface.
-
-### Running from source
-If you have `uv` installed, simply run:
-```bash
-uv run ResRamQt.py
-```
-
-### Pre-compiled Binaries
-You can download standalone executables for **Windows**, **Linux**, and **macOS** from the [GitHub Releases](https://github.com/your-repo/releases) page. No Python installation is required for these versions.
-
-> **Note for Linux users:** If you see an error about `libEGL.so.1`, install the following system libraries:
-> `sudo apt-get install libegl1 libgl1-mesa-glx`
+This version has been ported to **Tauri + Rust** for maximum performance and a modern desktop experience.
 
 ---
 
-## 2. GUI Features ✨
+## 1. Quick Start 🚀
 
-The ResRAM GUI is optimized for a smooth, responsive experience:
-*   **Real-time Visualization:** See Absorption, Fluorescence, and Raman Excitation Profiles update as you change parameters.
-*   **Background Calculations:** Heavy spectroscopic simulations run in a separate thread, keeping the interface snappy.
-*   **Debounced Updates:** Table edits are debounced (300ms) to prevent lag while typing.
-*   **Interactive Control:** 
-    *   Toggle individual vibrational modes to include/exclude them from plots.
-    *   Select which parameters (deltas, gamma, E0, etc.) should be varied during the automated fitting process.
-*   **Integrated Fitting:** Run the `lmfit` optimizer directly from the GUI and see the "best fit" results in real-time.
+### Prerequisites
+- [Rust](https://www.rust-lang.org/tools/install)
+- [Node.js](https://nodejs.org/) (v18+)
+- **Linux users:** Install system dependencies:
+  `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev patchelf`
 
----
-
-## 3. Installation & Development 🛠️
-
-If you want to use the core library in your own scripts or notebooks:
-
-### Using `uv` (Recommended)
-```bash
-uv pip install .
-```
-
-### Using `pip`
-```bash
-pip install .
-```
-
-### Required Python Libraries
-If not using `uv`, manual installation:
-```bash
-pip install numpy matplotlib scipy lmfit PyQt6 pyqtgraph
-```
-
----
-
-## 4. Optional: Rust Acceleration ⚡
-
-This project includes an optional **Rust backend** (`resram_rust`) that provides a **~4x performance speedup**.
-
-### How to Compile the Rust Backend
-1. **Install Rust:** [rustup.rs](https://rustup.rs/)
-2. **Build:**
+### Running the Desktop App
+1. Install dependencies:
    ```bash
-   cd resram_rust
-   cargo build --release
+   npm install
    ```
-3. **Copy the library** to the root project folder:
-   * **Linux:** `cp resram_rust/target/release/libresram_rust.so ./resram_rust.so`
-   * **macOS:** `cp resram_rust/target/release/libresram_rust.dylib ./resram_rust.so`
-   * **Windows:** `copy resram_rust\target\release\resram_rust.dll .\resram_rust.pyd`
+2. Start in development mode:
+   ```bash
+   npm run tauri dev
+   ```
 
 ---
 
-## 5. Input Data Format 📂
+## 2. Key Features ✨
 
-The program (GUI and Notebook) expects specific `.dat` files in the working directory:
+- **High-Performance Rust Engine:** Core physics and integration parallelized with Rayon, providing >4x speedup over Python.
+- **Modern UI:** Built with **React** and **Plotly.js** for responsive, publication-quality scientific visualization.
+- **Automated Fitting:** Integrated **Powell** and **COBYLA** global optimization algorithms via `nlopt`.
+- **Real-time Interaction:** Debounced parameter updates allow you to see theoretical changes instantly as you type.
+- **Standalone CLI:** Includes `resram-cli` for batch processing and headless calculations.
 
-*   **`inp.txt`**: Global settings (Temperature, Refractive Index, etc.).
+---
+
+## 3. Architecture 🏗️
+
+- **Backend (`resram_rust`):** A pure Rust library implementing the IMDHO (Independent Mode Displaced Harmonic Oscillator) model and Brownian oscillator theory.
+- **Desktop Bridge (Tauri):** Securely connects the Rust engine to the web frontend.
+- **Frontend (React):** Manages application state, parameter tables, and interactive spectral plots.
+
+---
+
+## 4. Input & Data 📂
+
+The application uses a workspace-driven workflow. Open a folder containing:
+*   **`inp.toml`**: Modernized configuration (automatically migrated from legacy `inp.txt`).
 *   **`freqs.dat`**: Vibrational frequencies (cm⁻¹).
 *   **`deltas.dat`**: Initial dimensionless displacements.
 *   **`abs_exp.dat`**: Experimental absorption spectrum.
-*   **`fl_exp.dat`**: Experimental fluorescence spectrum.
 *   **`profs_exp.dat`**: Experimental Raman excitation profiles.
-*   **`rpumps.dat`**: Experimental laser excitation wavenumbers.
+
+Outputs and optimized results are saved into a dedicated `rust_version/` subfolder.
 
 ---
 
-## 6. Notebook Usage (`.ipynb`) 📓
+## 5. CLI Usage 💻
 
-If you prefer a programmatic approach, use **`FSRSanalysis_v2.ipynb`**:
-1. Open in VS Code or JupyterLab.
-2. Run the cells sequentially to load data, perform calculations, and execute the fitting loop.
-3. Results are saved into a time-stamped directory (e.g., `2026-03-12_data`).
+For headless calculation or verification:
+```bash
+cd resram_rust
+cargo run --bin resram-cli
+```
 
 ---
 
 ## Acknowledgments 🙌
-Developed by **Likun Cai**, based on theoretical frameworks and research from:
+Developed by **Likun Cai**, based on research from:
 *   **Dr. Zachary Piontkowski** (University of Rochester)
-*   **Dr. Juan S. Sandoval & Dr. David W. McCamant** (University of Rochester) - *J. Phys. Chem. A* 2023, 127, 39, 8238–8251.
+*   **Dr. Juan S. Sandoval & Dr. David W. McCamant** (University of Rochester)
 *   **Mukamel et al.** - Brownian oscillator models for solvation.
 
 Happy scientific computing!
