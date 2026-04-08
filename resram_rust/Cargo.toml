@@ -1,15 +1,20 @@
 [package]
 name = "resram_rust"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
 name = "resram_rust"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.28.2", features = ["extension-module"] }
-numpy = "0.28.0"
 ndarray = "0.15"
 num-complex = "0.4"
+numpy = "0.21"
+pyo3 = { version = "0.21", features = ["extension-module"] }
 rayon = "1.8"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+nlopt = "0.7"
+anyhow = "1.0"
+thiserror = "1.0"

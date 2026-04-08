@@ -5,6 +5,8 @@ use pyo3::prelude::*;
 use std::f64::consts::PI;
 use rayon::prelude::*;
 
+pub mod models;
+
 /// Implements a "valid" convolution similar to np.convolve(a, v, 'valid')
 fn convolve_valid(input: &Array1<f64>, kernel: &Array1<f64>) -> Array1<f64> {
     let (a, v) = if input.len() >= kernel.len() {
