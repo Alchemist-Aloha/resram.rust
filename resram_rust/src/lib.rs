@@ -96,9 +96,9 @@ fn cross_sections_rust(
     );
 
     Ok((
-        abs_cross.into_pyarray(py).unbind(),
-        fl_cross.into_pyarray(py).unbind(),
-        raman_cross.into_pyarray(py).unbind(),
+        abs_cross.into_pyarray(py).to_owned(),
+        fl_cross.into_pyarray(py).to_owned(),
+        raman_cross.into_pyarray(py).to_owned(),
     ))
 }
 

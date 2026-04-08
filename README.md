@@ -69,8 +69,7 @@ cargo run --bin resram-cli
 
 ## Acknowledgments 🙌
 Developed by **Likun Cai**, based on research from:
-*   **Dr. Zachary Piontkowski** (University of Rochester)
-*   **Dr. Juan S. Sandoval & Dr. David W. McCamant** (University of Rochester)
+*   **Dr. Zachary Piontkowski, Dr. Juan S. Sandoval & Prof. David W. McCamant** (University of Rochester)
 *   **Mukamel et al.** - Brownian oscillator models for solvation.
 
 Happy scientific computing!

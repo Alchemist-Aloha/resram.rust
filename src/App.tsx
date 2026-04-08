@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import Plot from "react-plotly.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Settings, Play, Activity, FolderOpen, Save, List } from "lucide-react";
+import { Settings, Play, Activity, FolderOpen, List } from "lucide-react";
 import "./App.css";
 
 interface ResRamConfig {
@@ -42,7 +42,7 @@ function App() {
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [dir, setDir] = useState("");
   const [status, setStatus] = useState("Ready");
-  const [progress, setProgress] = useState<ProgressPayload | null>(null);
+  const [, setProgress] = useState<ProgressPayload | null>(null);
 
   useEffect(() => {
     const unlisten = listen<ProgressPayload>("fit-progress", (event) => {
@@ -59,7 +59,7 @@ function App() {
     if (path) {
       try {
         const loadedConfig = await invoke<ResRamConfig>("load_data", { dir: path });
-        const [loadedModes, _] = await invoke<[VibrationalMode[], number[]]>("load_vibrational_data_cmd", { dir: path });
+        const [loadedModes] = await invoke<[VibrationalMode[], number[]]>("load_vibrational_data_cmd", { dir: path });
         
         setConfig(loadedConfig);
         setModes(loadedModes);
@@ -87,7 +87,6 @@ function App() {
     if (!config || modes.length === 0) return;
     setStatus("Starting fit...");
     try {
-      // For now, fit all deltas and gamma
       const fitIndices = modes.map((_, i) => i);
       const resConfig = await invoke<ResRamConfig>("run_fit", {
         dir,
@@ -102,7 +101,7 @@ function App() {
       });
       setConfig(resConfig);
       setStatus("Fitting complete");
-      runCalc(); // Refresh plots
+      runCalc();
     } catch (e) {
       setStatus(`Error: ${e}`);
     }
@@ -186,7 +185,7 @@ function App() {
               ] : [])
             ]}
             layout={{ 
-              title: 'Absorption & Fluorescence', 
+              title: { text: 'Absorption & Fluorescence' }, 
               autosize: true,
               margin: { t: 40, r: 20, b: 40, l: 60 }
             }}
@@ -205,7 +204,7 @@ function App() {
               })) : [])
             ]}
             layout={{ 
-              title: 'Raman Excitation Profiles', 
+              title: { text: 'Raman Excitation Profiles' }, 
               autosize: true,
               margin: { t: 40, r: 20, b: 40, l: 60 }
             }}
