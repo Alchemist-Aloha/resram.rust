@@ -136,3 +136,44 @@ button.primary:hover:not(:disabled) {
   min-height: 400px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
+
+.scrollable {
+  overflow-y: auto;
+}
+
+.modes-table {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.modes-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.modes-table th {
+  text-align: left;
+  background-color: #f8fafc;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modes-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.modes-table input {
+  width: 100%;
+  padding: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.modes-table input:hover, .modes-table input:focus {
+  border-color: var(--border-color);
+  background: white;
+}

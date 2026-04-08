@@ -85,11 +85,41 @@ async fn run_fit<R: Runtime>(
     Ok(config)
 }
 
+#[tauri::command]
+fn load_vibrational_data_cmd(dir: String) -> Result<(Vec<VibrationalMode>, Vec<f64>), String> {
+    load_vibrational_data(dir).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_calculation(config: ResRamConfig, modes: Vec<VibrationalMode>) -> Result<SimulationResult, String> {
+    // Setup grids (simplified for now, should ideally be passed or calculated properly)
+    let el_reach = config.el_reach;
+    let e0 = config.e0;
+    let n_time = config.n_time;
+    let ts = config.time_step;
+    let th = Array1::linspace(0.0, (n_time as f64) * ts / 5.3088, n_time);
+    let el = Array1::linspace(e0 - el_reach, e0 + el_reach, 1000);
+    let e0_range = Array1::linspace(-el_reach * 0.5, el_reach * 0.5, 501);
+    let out_len = el.len().max(e0_range.len()) - el.len().min(e0_range.len()) + 1;
+    let conv_el = Array1::linspace(e0 - el_reach * 0.5, e0 + el_reach * 0.5, out_len);
+
+    let result = compute_spectra(
+        &config,
+        &modes,
+        &th.view(),
+        &el.view(),
+        &conv_el.view(),
+        &e0_range.view(),
+    );
+
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![load_data, run_fit])
+        .invoke_handler(tauri::generate_handler![load_data, run_fit, run_calculation, load_vibrational_data_cmd])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
