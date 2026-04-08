@@ -19,7 +19,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+resram_rust = { path = "../resram_rust" }
+nlopt = "0.7"
+ndarray = "0.15"
+tokio = { version = "1", features = ["full"] }
+
 
