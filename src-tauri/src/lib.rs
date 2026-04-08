@@ -54,8 +54,7 @@ async fn run_fit<R: Runtime>(
 ) -> Result<ResRamConfig, String> {
     let root = Path::new(&dir);
     
-    // In a real app, you would load experimental data once and reuse it.
-    // For now, let's load it here.
+    // Load experimental data
     let abs_exp_path = root.join("abs_exp.dat");
     let profs_exp_path = root.join("profs_exp.dat");
     let rp_path = root.join("rpumps.dat");
@@ -64,25 +63,116 @@ async fn run_fit<R: Runtime>(
     let abs_exp: Array1<f64> = abs_exp_content.lines().filter_map(|l| l.split('\t').nth(1)?.trim().parse().ok()).collect();
 
     let profs_exp_content = std::fs::read_to_string(profs_exp_path).map_err(|e| e.to_string())?;
-    // This needs proper 2D parsing. Assuming simple whitespace for now.
-    // ...
+    let profs_rows: Vec<Vec<f64>> = profs_exp_content.lines()
+        .map(|l| l.split('\t').filter_map(|s| s.trim().parse().ok()).collect())
+        .filter(|r: &Vec<f64>| !r.is_empty())
+        .collect();
     
-    // Progress callback
-    let app_handle = app.clone();
-    let callback: ProgressCallback = Arc::new(move |iter, loss, params| {
-        let payload = ProgressPayload {
-            iteration: iter,
-            loss,
-            parameters: params.to_vec(),
-        };
-        let _ = app_handle.emit("fit-progress", payload);
-    });
+    let n_modes = profs_rows.len();
+    let n_pumps = if n_modes > 0 { profs_rows[0].len() } else { 0 };
+    let mut profs_exp = Array2::zeros((n_modes, n_pumps));
+    for (i, row) in profs_rows.into_iter().enumerate() {
+        for (j, val) in row.into_iter().enumerate() {
+            profs_exp[[i, j]] = val;
+        }
+    }
 
-    // Run optimization in a separate thread/task
-    // For now, return the original config as a placeholder.
-    // We'll implement the full optimization context setup here later.
-    
-    Ok(config)
+    let rp_content = std::fs::read_to_string(rp_path).map_err(|e| e.to_string())?;
+    let rpumps: Vec<f64> = rp_content.lines().filter_map(|l| l.trim().parse().ok()).collect();
+
+    // Grids
+    let el_reach = config.el_reach;
+    let e0 = config.e0;
+    let n_time = config.n_time;
+    let ts = config.time_step;
+    let th = Array1::linspace(0.0, (n_time as f64) * ts / 5.3088, n_time);
+    let el = Array1::linspace(e0 - el_reach, e0 + el_reach, 1000);
+    let e0_range = Array1::linspace(-el_reach * 0.5, el_reach * 0.5, 501);
+    let out_len = el.len().max(e0_range.len()) - el.len().min(e0_range.len()) + 1;
+    let conv_el = Array1::linspace(e0 - el_reach * 0.5, e0 + el_reach * 0.5, out_len);
+
+    // rp indices logic
+    let mut rp_indices = Vec::new();
+    for pump in rpumps {
+        let mut min_diff = f64::MAX;
+        let mut best_idx = 0;
+        for (i, &e) in conv_el.iter().enumerate() {
+            let diff = (e - pump).abs();
+            if diff < min_diff {
+                min_diff = diff;
+                best_idx = i;
+            }
+        }
+        rp_indices.push(best_idx);
+    }
+
+    let k_b_t = 0.695 * config.temp;
+    let pre_a = ((5.744e-3) / config.n) * ts;
+    let pre_f = pre_a * config.n.powi(2);
+    let pre_r = 2.08e-20 * ts.powi(2);
+
+    let context = OptimizationContext {
+        config: config.clone(),
+        modes: modes.clone(),
+        th,
+        el,
+        conv_el,
+        e0_range,
+        abs_exp,
+        profs_exp,
+        rp: rp_indices,
+        pre_a,
+        pre_f,
+        pre_r,
+        beta: 1.0 / k_b_t,
+        dt: ts,
+        fit_indices,
+        fit_gamma,
+        fit_m,
+        fit_theta,
+        iteration: 0,
+        progress_callback: Some(Arc::new(move |iter, loss, params| {
+            let _ = app.emit("fit-progress", ProgressPayload {
+                iteration: iter,
+                loss,
+                parameters: params.to_vec(),
+            });
+        })),
+    };
+
+    let algorithm = match algorithm_name.as_str() {
+        "cobyla" => nlopt::Algorithm::Cobyla,
+        _ => nlopt::Algorithm::Powell,
+    };
+
+    let (optimized_params, _final_loss) = run_optimization(
+        algorithm,
+        context,
+        max_eval,
+        1e-8
+    ).map_err(|e| e)?;
+
+    // Update config and modes with results
+    let mut final_config = config;
+    let mut final_modes = modes;
+    let mut cursor = 0;
+    for &idx in &fit_indices {
+        final_modes[idx].displacement = optimized_params[cursor];
+        cursor += 1;
+    }
+    if fit_gamma {
+        final_config.gamma = optimized_params[cursor];
+        cursor += 1;
+    }
+    if fit_m {
+        final_config.m = optimized_params[cursor];
+        cursor += 1;
+    }
+    if fit_theta {
+        final_config.theta = optimized_params[cursor];
+    }
+
+    Ok(final_config)
 }
 
 #[tauri::command]
