@@ -22,6 +22,14 @@ pyvenv.cfg
 /.direnv/
 .envrc
 
+# Tauri and React
+node_modules/
+dist/
+dist-ssr/
+src-tauri/target/
+*.local
+Process Group PGID: 2765289
+
 # sensitive environment variables
 .env
 
