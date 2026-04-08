@@ -37,6 +37,7 @@ interface SimulationResult {
   profs_exp?: number[][];
   raman_cross: number[][];
   raman_spec: number[][];
+  rp_indices: number[];
   conv_el: number[];
   rshift: number[];
 }
@@ -73,6 +74,7 @@ function App() {
   const [status, setStatus] = useState("Ready");
   const [maxEval, setMaxEval] = useState(1000);
   const [refreshStep, setRefreshStep] = useState(10);
+  const [fitAlgorithm, setFitAlgorithm] = useState("powell");
   const [, setProgress] = useState<ProgressPayload | null>(null);
   const [isFitting, setIsFitting] = useState(false);
   const fitSessionRef = useRef<FitSession | null>(null);
@@ -223,7 +225,7 @@ function App() {
         fitTheta: fitSwitches.theta,
         fitKappa: fitSwitches.kappa,
         fitE0: fitSwitches.e0,
-        algorithmName: "powell",
+          algorithmName: fitAlgorithm,
         maxEval: maxEval,
         refreshStep: refreshStep,
       });
@@ -265,6 +267,18 @@ function App() {
   const modeColor = (i: number) => {
     const hue = (i * 47) % 360;
     return `hsl(${hue}, 70%, 45%)`;
+  };
+
+  const normalizedFlExp = (result?: SimulationResult | null): number[] | null => {
+    if (!result?.fl_exp || result.fl_exp.length === 0 || result.fl_cross.length === 0) {
+      return null;
+    }
+    const maxCalc = Math.max(...result.fl_cross.map((v) => Math.abs(v)));
+    const maxExp = Math.max(...result.fl_exp.map((v) => Math.abs(v)));
+    if (!Number.isFinite(maxCalc) || !Number.isFinite(maxExp) || maxExp <= 0) {
+      return result.fl_exp;
+    }
+    return result.fl_exp.map((v) => (maxCalc * v) / maxExp);
   };
 
   return (
@@ -310,6 +324,18 @@ function App() {
                 <label>Max Fit Step</label>
                 <input type="number" value={maxEval} onChange={e => setMaxEval(parseInt(e.target.value))} />
               </div>
+                <div className="param-row">
+                  <label>Algorithm</label>
+                  <select value={fitAlgorithm} onChange={e => setFitAlgorithm(e.target.value)}>
+                    <option value="powell">Powell (Praxis)</option>
+                    <option value="cobyla">COBYLA</option>
+                    <option value="bobyqa">BOBYQA</option>
+                    <option value="newuoa">NEWUOA</option>
+                    <option value="newuoa_bound">NEWUOA Bound</option>
+                    <option value="neldermead">Nelder-Mead</option>
+                    <option value="sbplx">SBPLX (Subplex)</option>
+                  </select>
+                </div>
               <div className="param-row">
                 <label>UI Refresh Step</label>
                 <input type="number" value={refreshStep} onChange={e => setRefreshStep(parseInt(e.target.value))} />
@@ -385,7 +411,7 @@ function App() {
                 }] : []),
                 ...(result.fl_exp ? [{
                   x: result.conv_el,
-                  y: result.fl_exp,
+                    y: normalizedFlExp(result) ?? result.fl_exp,
                   type: 'scatter' as const,
                   name: 'FL (Exp)',
                   line: { color: 'red', dash: 'dash' as const }
@@ -417,19 +443,9 @@ function App() {
                     line: { color: modeColor(i) }
                   })) : []),
                   ...(result && result.profs_exp ? result.profs_exp.map((row, j) => {
-                    const xPts = rpumps.map((pump) => {
-                      if (!result.conv_el.length) return pump;
-                      let bestIdx = 0;
-                      let bestDiff = Infinity;
-                      result.conv_el.forEach((v, idx) => {
-                        const d = Math.abs(v - pump);
-                        if (d < bestDiff) {
-                          bestDiff = d;
-                          bestIdx = idx;
-                        }
-                      });
-                      return result.conv_el[bestIdx];
-                    });
+                      const xPts = result.rp_indices
+                        .filter((idx) => idx >= 0 && idx < result.conv_el.length)
+                        .map((idx) => result.conv_el[idx]);
                     const yPts = row.slice(0, xPts.length);
                     return {
                       x: xPts.slice(0, yPts.length),

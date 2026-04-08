@@ -121,7 +121,7 @@ pub fn run_optimization(
     for &idx in &context.fit_indices {
         initial_x.push(context.modes[idx].displacement);
         lower_bounds.push(0.0);
-        upper_bounds.push(2.0);
+        upper_bounds.push(1.0);
     }
 
     if context.fit_gamma {
@@ -132,14 +132,14 @@ pub fn run_optimization(
 
     if context.fit_m {
         initial_x.push(context.config.m);
-        lower_bounds.push(0.5 * context.config.m);
-        upper_bounds.push(1.5 * context.config.m);
+        lower_bounds.push(0.8 * context.config.m);
+        upper_bounds.push(1.2 * context.config.m);
     }
 
     if context.fit_theta {
         initial_x.push(context.config.theta);
         lower_bounds.push(0.0);
-        upper_bounds.push(50.0);
+        upper_bounds.push(10.0);
     }
 
     if context.fit_kappa {
@@ -150,8 +150,8 @@ pub fn run_optimization(
 
     if context.fit_e0 {
         initial_x.push(context.config.e0);
-        lower_bounds.push(0.9 * context.config.e0);
-        upper_bounds.push(1.1 * context.config.e0);
+        lower_bounds.push(0.95 * context.config.e0);
+        upper_bounds.push(1.05 * context.config.e0);
     }
 
     let n_params = initial_x.len();

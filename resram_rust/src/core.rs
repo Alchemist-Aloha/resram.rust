@@ -200,6 +200,7 @@ pub fn compute_spectra(
 
     // Generate Raman Spectra for each pump
     let mut raman_spec = Vec::new();
+    let mut rp_indices = Vec::new();
     for &pump in rpumps {
         // Find index of pump in conv_el
         let mut min_diff = f64::MAX;
@@ -211,6 +212,7 @@ pub fn compute_spectra(
                 pump_idx = i;
             }
         }
+        rp_indices.push(pump_idx);
 
         let mut spec = Array1::zeros(rshift_arr.len());
         for j in 0..wg.len() {
@@ -235,6 +237,7 @@ pub fn compute_spectra(
         profs_exp: None,
         raman_cross: raman_cross.rows().into_iter().map(|r| r.to_vec()).collect(),
         raman_spec,
+        rp_indices,
         conv_el: conv_el.to_vec(),
         rshift,
     }

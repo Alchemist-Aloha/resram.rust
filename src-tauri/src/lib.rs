@@ -114,6 +114,63 @@ fn load_exp_matrix(path: &Path) -> Result<Option<Vec<Vec<f64>>>, String> {
     }
 }
 
+fn parse_algorithm(name: &str) -> nlopt::Algorithm {
+    match name.to_lowercase().as_str() {
+        "powell" | "praxis" => nlopt::Algorithm::Praxis,
+        "cobyla" => nlopt::Algorithm::Cobyla,
+        "bobyqa" => nlopt::Algorithm::Bobyqa,
+        "newuoa" => nlopt::Algorithm::Newuoa,
+        "newuoa_bound" | "newuoabound" => nlopt::Algorithm::NewuoaBound,
+        "neldermead" | "nelder-mead" => nlopt::Algorithm::Neldermead,
+        "sbplx" | "subplex" => nlopt::Algorithm::Sbplx,
+        _ => nlopt::Algorithm::Praxis,
+    }
+}
+
+fn load_scalar_list(path: &Path) -> Result<Vec<f64>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    Ok(content
+        .lines()
+        .filter_map(|l| l.split_whitespace().next().and_then(|s| s.parse::<f64>().ok()))
+        .collect())
+}
+
+fn write_vec(path: &Path, values: &[f64]) -> Result<(), String> {
+    let content = values
+        .iter()
+        .map(|v| format!("{:.12e}", v))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+fn write_matrix(path: &Path, rows: &[Vec<f64>]) -> Result<(), String> {
+    let content = rows
+        .iter()
+        .map(|row| row.iter().map(|v| format!("{:.12e}", v)).collect::<Vec<_>>().join("\t"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(path, content).map_err(|e| e.to_string())
+}
+
+fn transpose_matrix(input: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    if input.is_empty() || input[0].is_empty() {
+        return Vec::new();
+    }
+    let rows = input.len();
+    let cols = input[0].len();
+    let mut out = vec![vec![0.0; rows]; cols];
+    for r in 0..rows {
+        for c in 0..cols {
+            out[c][r] = input[r][c];
+        }
+    }
+    out
+}
+
 #[derive(Clone, Serialize)]
 struct ProgressPayload {
     iteration: u32,
@@ -147,6 +204,44 @@ fn save_data_impl(dir: &str, config: &ResRamConfig, modes: &[VibrationalMode]) -
     write_config_txt(&txt_path, config).map_err(|e| e.to_string())?;
 
     save_vibrational_data(&output_dir, modes).map_err(|e| e.to_string())?;
+
+    // Save calculated outputs to match Python run_save style.
+    let el_reach = config.el_reach;
+    let e0 = config.e0;
+    let n_time = config.n_time;
+    let ts = config.time_step;
+    let th = Array1::linspace(0.0, (n_time as f64) * ts / 5.3088, n_time);
+    let el = Array1::linspace(e0 - el_reach, e0 + el_reach, 1000);
+    let e0_range = Array1::linspace(-el_reach * 0.5, el_reach * 0.5, 501);
+    let out_len = el.len().max(e0_range.len()) - el.len().min(e0_range.len()) + 1;
+    let conv_el = Array1::linspace(e0 - el_reach * 0.5, e0 + el_reach * 0.5, out_len);
+
+    let rpumps = load_scalar_list(&root.join("rpumps.dat"))?;
+    let result = compute_spectra(
+        config,
+        modes,
+        &rpumps,
+        &th.view(),
+        &el.view(),
+        &conv_el.view(),
+        &e0_range.view(),
+    );
+
+    write_vec(&output_dir.join("Abs.dat"), &result.abs_cross)?;
+    write_vec(&output_dir.join("Fl.dat"), &result.fl_cross)?;
+    write_vec(&output_dir.join("EL.dat"), &result.conv_el)?;
+    write_vec(&output_dir.join("rshift.dat"), &result.rshift)?;
+
+    // Python saves profs.dat as transpose(raman_cross): [energy][mode]
+    let profs = transpose_matrix(&result.raman_cross);
+    write_matrix(&output_dir.join("profs.dat"), &profs)?;
+
+    if !result.raman_spec.is_empty() {
+        // Python saves raman_spec.dat as [rshift][pump]
+        let raman_spec_t = transpose_matrix(&result.raman_spec);
+        write_matrix(&output_dir.join("raman_spec.dat"), &raman_spec_t)?;
+        write_vec(&output_dir.join("rpumps.dat"), &rpumps)?;
+    }
 
     // Save output.toml summary with comments
     let mut summary_content = String::new();
@@ -365,10 +460,7 @@ async fn run_fit<R: Runtime>(
         })),
     };
 
-    let algorithm = match algorithm_name.as_str() {
-        "cobyla" => nlopt::Algorithm::Cobyla,
-        _ => nlopt::Algorithm::Bobyqa,
-    };
+    let algorithm = parse_algorithm(&algorithm_name);
 
     // Run in blocking thread
     let (optimized_params, _final_loss) = tauri::async_runtime::spawn_blocking(move || {
