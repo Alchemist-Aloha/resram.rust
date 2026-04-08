@@ -230,6 +230,9 @@ pub fn compute_spectra(
     SimulationResult {
         abs_cross: abs_cross.to_vec(),
         fl_cross: fl_cross.to_vec(),
+        abs_exp: None,
+        fl_exp: None,
+        profs_exp: None,
         raman_cross: raman_cross.rows().into_iter().map(|r| r.to_vec()).collect(),
         raman_spec,
         conv_el: conv_el.to_vec(),

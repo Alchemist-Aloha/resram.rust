@@ -1,18 +1,205 @@
-use resram_rust::config::{load_config, load_vibrational_data, migrate_txt_to_toml, save_config, save_vibrational_data, write_config_txt};
+use resram_rust::config::{load_config, load_vibrational_data, migrate_txt_to_toml, save_vibrational_data, write_config_txt, write_config_toml};
 use resram_rust::models::{ResRamConfig, VibrationalMode, SimulationResult};
 use resram_rust::core::compute_spectra;
-use resram_rust::optimizer::{run_optimization, OptimizationContext, ProgressCallback};
-use std::path::{Path, PathBuf};
-use serde::{Serialize, Deserialize};
+use resram_rust::optimizer::{run_optimization, OptimizationContext};
+use std::path::Path;
+use serde::Serialize;
 use ndarray::prelude::*;
 use std::sync::Arc;
 use tauri::{Emitter, Runtime};
+
+fn parse_spectrum_xy(path: &Path) -> Result<(Vec<f64>, Vec<f64>), String> {
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut x = Vec::new();
+    let mut y = Vec::new();
+
+    for line in content.lines() {
+        let nums: Vec<f64> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse::<f64>().ok())
+            .collect();
+        if nums.len() >= 2 {
+            x.push(nums[0]);
+            y.push(nums[1]);
+        } else if nums.len() == 1 {
+            y.push(nums[0]);
+        }
+    }
+
+    if !x.is_empty() {
+        if x.len() != y.len() {
+            return Err(format!("Invalid spectrum format in {}", path.display()));
+        }
+        if x.first().unwrap_or(&0.0) > x.last().unwrap_or(&0.0) {
+            x.reverse();
+            y.reverse();
+        }
+        Ok((x, y))
+    } else {
+        // 1-column fallback assumes evenly spaced points on current convEL.
+        Ok((Vec::new(), y))
+    }
+}
+
+fn interp_linear(x: &[f64], y: &[f64], x_new: &Array1<f64>) -> Vec<f64> {
+    if x.is_empty() {
+        if y.len() == x_new.len() {
+            return y.to_vec();
+        }
+        return vec![0.0; x_new.len()];
+    }
+    if x.len() == 1 {
+        return vec![y[0]; x_new.len()];
+    }
+
+    let mut out = Vec::with_capacity(x_new.len());
+    for &xn in x_new {
+        if xn <= x[0] {
+            out.push(y[0]);
+            continue;
+        }
+        if xn >= x[x.len() - 1] {
+            out.push(y[y.len() - 1]);
+            continue;
+        }
+
+        let mut lo = 0usize;
+        let mut hi = x.len() - 1;
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            if x[mid] <= xn {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+
+        let x0 = x[lo];
+        let x1 = x[hi];
+        let y0 = y[lo];
+        let y1 = y[hi];
+        let t = if x1 != x0 { (xn - x0) / (x1 - x0) } else { 0.0 };
+        out.push(y0 + t * (y1 - y0));
+    }
+    out
+}
+
+fn load_exp_interp(path: &Path, conv_el: &Array1<f64>) -> Result<Option<Vec<f64>>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let (x, y) = parse_spectrum_xy(path)?;
+    if y.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(interp_linear(&x, &y, conv_el)))
+}
+
+fn load_exp_matrix(path: &Path) -> Result<Option<Vec<Vec<f64>>>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let rows: Vec<Vec<f64>> = content
+        .lines()
+        .map(|l| l.split_whitespace().filter_map(|s| s.parse::<f64>().ok()).collect())
+        .filter(|r: &Vec<f64>| !r.is_empty())
+        .collect();
+
+    if rows.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(rows))
+    }
+}
 
 #[derive(Clone, Serialize)]
 struct ProgressPayload {
     iteration: u32,
     loss: f64,
     parameters: Vec<f64>,
+}
+
+#[derive(Clone, Serialize)]
+struct FitResultPayload {
+    config: ResRamConfig,
+    modes: Vec<VibrationalMode>,
+    folder_name: String,
+}
+
+fn save_data_impl(dir: &str, config: &ResRamConfig, modes: &[VibrationalMode]) -> Result<String, String> {
+    use std::fs;
+    use chrono::Local;
+
+    let root = Path::new(dir);
+    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+    let folder_name = format!("data_{}", timestamp);
+    let output_dir = root.join(&folder_name);
+
+    fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    // Save updated files
+    let toml_path = output_dir.join("inp.toml");
+    write_config_toml(&toml_path, config).map_err(|e| e.to_string())?;
+
+    let txt_path = output_dir.join("inp.txt");
+    write_config_txt(&txt_path, config).map_err(|e| e.to_string())?;
+
+    save_vibrational_data(&output_dir, modes).map_err(|e| e.to_string())?;
+
+    // Save output.toml summary with comments
+    let mut summary_content = String::new();
+    summary_content.push_str("# ResRAM Output Summary\n");
+    summary_content.push_str(&format!("timestamp = \"{}\"\n\n", timestamp));
+    summary_content.push_str("[parameters]\n");
+    summary_content.push_str(&format!("gamma = {} # homogeneous broadening parameter (cm^-1)\n", config.gamma));
+    summary_content.push_str(&format!("theta = {} # static inhomogeneous broadening parameter (cm^-1)\n", config.theta));
+    summary_content.push_str(&format!("e0 = {} # 0-0 transition energy (cm^-1)\n", config.e0));
+    summary_content.push_str(&format!("kappa = {} # brownian oscillator kappa parameter\n", config.kappa));
+    summary_content.push_str(&format!("time_step = {} # integration time step (ps)\n", config.time_step));
+    summary_content.push_str(&format!("n_time = {} # number of time steps\n", config.n_time));
+    summary_content.push_str(&format!("el_reach = {} # energy grid reach around E0 (cm^-1)\n", config.el_reach));
+    summary_content.push_str(&format!("m = {} # transition dipole moment length (Angstroms)\n", config.m));
+    summary_content.push_str(&format!("n = {} # refractive index of medium\n", config.n));
+    summary_content.push_str(&format!("raman_start = {} # start of raman shift axis (cm^-1)\n", config.raman_start));
+    summary_content.push_str(&format!("raman_end = {} # end of raman shift axis (cm^-1)\n", config.raman_end));
+    summary_content.push_str(&format!("raman_step = {} # raman shift axis step size (cm^-1)\n", config.raman_step));
+    summary_content.push_str(&format!("raman_res = {} # raman peak resolution (cm^-1)\n", config.raman_res));
+    summary_content.push_str(&format!("temp = {} # temperature (K)\n", config.temp));
+    summary_content.push_str(&format!("convergence = {} # convergence threshold for higher-order sums\n", config.convergence));
+    summary_content.push_str(&format!("boltz_toggle = {} # enable boltzmann thermal averaging\n", config.boltz_toggle));
+
+    fs::write(output_dir.join("output.toml"), summary_content).map_err(|e| e.to_string())?;
+
+    // Copy original files from source dir as old if they exist
+    let src_toml = root.join("inp.toml");
+    if src_toml.exists() {
+        fs::copy(src_toml, output_dir.join("inp_old.toml")).ok();
+    }
+    let src_txt = root.join("inp.txt");
+    if src_txt.exists() {
+        fs::copy(src_txt, output_dir.join("inp_old.txt")).ok();
+    }
+
+    // Copy data files from source dir
+    let data_files = [
+        "freqs.dat",
+        "abs_exp.dat",
+        "fl_exp.dat",
+        "profs_exp.dat",
+        "rpumps.dat",
+        "rshift_exp.dat",
+    ];
+
+    for file in data_files {
+        let src = root.join(file);
+        if src.exists() {
+            fs::copy(src, output_dir.join(file)).ok();
+        }
+    }
+
+    Ok(folder_name)
 }
 
 #[tauri::command]
@@ -36,7 +223,8 @@ fn load_vibrational_data_cmd(dir: String) -> Result<(Vec<VibrationalMode>, Vec<f
 }
 
 #[tauri::command]
-fn run_calculation(config: ResRamConfig, modes: Vec<VibrationalMode>, rpumps: Vec<f64>) -> Result<SimulationResult, String> {
+fn run_calculation(dir: String, config: ResRamConfig, modes: Vec<VibrationalMode>, rpumps: Vec<f64>) -> Result<SimulationResult, String> {
+    let root = Path::new(&dir);
     let el_reach = config.el_reach;
     let e0 = config.e0;
     let n_time = config.n_time;
@@ -47,7 +235,7 @@ fn run_calculation(config: ResRamConfig, modes: Vec<VibrationalMode>, rpumps: Ve
     let out_len = el.len().max(e0_range.len()) - el.len().min(e0_range.len()) + 1;
     let conv_el = Array1::linspace(e0 - el_reach * 0.5, e0 + el_reach * 0.5, out_len);
 
-    Ok(compute_spectra(
+    let mut result = compute_spectra(
         &config,
         &modes,
         &rpumps,
@@ -55,7 +243,13 @@ fn run_calculation(config: ResRamConfig, modes: Vec<VibrationalMode>, rpumps: Ve
         &el.view(),
         &conv_el.view(),
         &e0_range.view(),
-    ))
+    );
+
+    result.abs_exp = load_exp_interp(&root.join("abs_exp.dat"), &conv_el)?;
+    result.fl_exp = load_exp_interp(&root.join("fl_exp.dat"), &conv_el)?;
+    result.profs_exp = load_exp_matrix(&root.join("profs_exp.dat"))?;
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -73,21 +267,14 @@ async fn run_fit<R: Runtime>(
     algorithm_name: String,
     max_eval: u32,
     refresh_step: u32,
-) -> Result<ResRamConfig, String> {
+) -> Result<FitResultPayload, String> {
     let root = Path::new(&dir);
     
     // Load experimental data
     let abs_exp_path = root.join("abs_exp.dat");
+    let fl_exp_path = root.join("fl_exp.dat");
     let profs_exp_path = root.join("profs_exp.dat");
     let rp_path = root.join("rpumps.dat");
-
-    let abs_exp_content = std::fs::read_to_string(abs_exp_path).map_err(|e| e.to_string())?;
-    let abs_exp: Array1<f64> = abs_exp_content.lines()
-        .filter_map(|l| {
-            let parts: Vec<&str> = l.split_whitespace().collect();
-            if parts.len() >= 2 { parts[1].parse().ok() } else { l.parse().ok() }
-        })
-        .collect();
 
     let profs_exp_content = std::fs::read_to_string(profs_exp_path).map_err(|e| e.to_string())?;
     let profs_rows: Vec<Vec<f64>> = profs_exp_content.lines()
@@ -117,6 +304,13 @@ async fn run_fit<R: Runtime>(
     let e0_range = Array1::linspace(-el_reach * 0.5, el_reach * 0.5, 501);
     let out_len = el.len().max(e0_range.len()) - el.len().min(e0_range.len()) + 1;
     let conv_el = Array1::linspace(e0 - el_reach * 0.5, e0 + el_reach * 0.5, out_len);
+
+    // Python parity: interpolate experimental spectra onto convEL grid.
+    let abs_exp_vec = load_exp_interp(&abs_exp_path, &conv_el)?
+        .ok_or_else(|| "abs_exp.dat is required for fitting".to_string())?;
+    let _fl_exp_vec = load_exp_interp(&fl_exp_path, &conv_el)?;
+    // Python raman_residual uses abs_exp in loss; fl_exp is loaded for plotting only.
+    let abs_exp: Array1<f64> = Array1::from(abs_exp_vec);
 
     // rp indices
     let mut rp_indices = Vec::new();
@@ -187,9 +381,12 @@ async fn run_fit<R: Runtime>(
     }).await.map_err(|e| e.to_string())?.map_err(|e| e)?;
 
     let mut final_config = config;
+    let mut final_modes = modes;
     let mut cursor = 0;
-    // We update final_config here.
-    for _ in &fit_indices {
+
+    // Apply optimized deltas back to mode displacements.
+    for &idx in &fit_indices {
+        final_modes[idx].displacement = optimized_params[cursor];
         cursor += 1;
     }
     if fit_gamma {
@@ -212,71 +409,18 @@ async fn run_fit<R: Runtime>(
         final_config.e0 = optimized_params[cursor];
     }
 
-    Ok(final_config)
+    let folder_name = save_data_impl(&dir, &final_config, &final_modes)?;
+
+    Ok(FitResultPayload {
+        config: final_config,
+        modes: final_modes,
+        folder_name,
+    })
 }
 
 #[tauri::command]
 fn save_data(dir: String, config: ResRamConfig, modes: Vec<VibrationalMode>) -> Result<String, String> {
-    use std::fs;
-    use chrono::Local;
-
-    let root = Path::new(&dir);
-    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
-    let folder_name = format!("data_{}", timestamp);
-    let output_dir = root.join(&folder_name);
-
-    fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
-
-    // 1. Save updated files
-    let toml_path = output_dir.join("inp.toml");
-    save_config(&toml_path, &config).map_err(|e| e.to_string())?;
-    
-    let txt_path = output_dir.join("inp.txt");
-    write_config_txt(&txt_path, &config).map_err(|e| e.to_string())?;
-
-    save_vibrational_data(&output_dir, &modes).map_err(|e| e.to_string())?;
-
-    // 2. Save output.toml (summary)
-    #[derive(Serialize)]
-    struct OutputSummary {
-        parameters: ResRamConfig,
-        timestamp: String,
-    }
-    let summary = OutputSummary {
-        parameters: config.clone(),
-        timestamp: timestamp.clone(),
-    };
-    let summary_content = toml::to_string_pretty(&summary).map_err(|e: toml::ser::Error| e.to_string())?;
-    fs::write(output_dir.join("output.toml"), summary_content).map_err(|e| e.to_string())?;
-
-    // 3. Copy original files from source dir as "old" if they exist
-    let src_toml = root.join("inp.toml");
-    if src_toml.exists() {
-        fs::copy(src_toml, output_dir.join("inp_old.toml")).ok();
-    }
-    let src_txt = root.join("inp.txt");
-    if src_txt.exists() {
-        fs::copy(src_txt, output_dir.join("inp_old.txt")).ok();
-    }
-
-    // 4. Copy other data files from source dir
-    let data_files = [
-        "freqs.dat",
-        "abs_exp.dat",
-        "fl_exp.dat",
-        "profs_exp.dat",
-        "rpumps.dat",
-        "rshift_exp.dat",
-    ];
-
-    for file in data_files {
-        let src = root.join(file);
-        if src.exists() {
-            fs::copy(src, output_dir.join(file)).ok();
-        }
-    }
-
-    Ok(folder_name)
+    save_data_impl(&dir, &config, &modes)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

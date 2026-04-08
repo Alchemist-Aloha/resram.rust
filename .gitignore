@@ -12,7 +12,7 @@ resram_rust.dll
 *_data/
 # Dask
 dask-worker-space/
-
+best_fit/data_*/
 # virtualenv
 /bin/
 pyvenv.cfg

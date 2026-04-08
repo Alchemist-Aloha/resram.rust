@@ -76,6 +76,30 @@ pub fn load_vibrational_data<P: AsRef<Path>>(dir: P) -> Result<(Vec<VibrationalM
     Ok((modes, rpumps))
 }
 
+pub fn write_config_toml<P: AsRef<Path>>(path: P, config: &ResRamConfig) -> Result<()> {
+    let mut content = String::new();
+    content.push_str("# ResRAM Configuration File\n\n");
+    content.push_str(&format!("gamma = {} # homogeneous broadening parameter (cm^-1)\n", config.gamma));
+    content.push_str(&format!("theta = {} # static inhomogeneous broadening parameter (cm^-1)\n", config.theta));
+    content.push_str(&format!("e0 = {} # 0-0 transition energy (cm^-1)\n", config.e0));
+    content.push_str(&format!("kappa = {} # brownian oscillator kappa parameter\n", config.kappa));
+    content.push_str(&format!("time_step = {} # integration time step (ps)\n", config.time_step));
+    content.push_str(&format!("n_time = {} # number of time steps\n", config.n_time));
+    content.push_str(&format!("el_reach = {} # energy grid reach around E0 (cm^-1)\n", config.el_reach));
+    content.push_str(&format!("m = {} # transition dipole moment length (Angstroms)\n", config.m));
+    content.push_str(&format!("n = {} # refractive index of medium\n", config.n));
+    content.push_str(&format!("raman_start = {} # start of raman shift axis (cm^-1)\n", config.raman_start));
+    content.push_str(&format!("raman_end = {} # end of raman shift axis (cm^-1)\n", config.raman_end));
+    content.push_str(&format!("raman_step = {} # raman shift axis step size (cm^-1)\n", config.raman_step));
+    content.push_str(&format!("raman_res = {} # raman peak resolution (cm^-1)\n", config.raman_res));
+    content.push_str(&format!("temp = {} # temperature (K)\n", config.temp));
+    content.push_str(&format!("convergence = {} # convergence threshold for higher-order sums\n", config.convergence));
+    content.push_str(&format!("boltz_toggle = {} # enable boltzmann thermal averaging\n", config.boltz_toggle));
+    
+    fs::write(path, content)?;
+    Ok(())
+}
+
 pub fn write_config_txt<P: AsRef<Path>>(path: P, config: &ResRamConfig) -> Result<()> {
     let mut content = String::new();
     content.push_str(&format!("{} # gamma linewidth parameter (cm^-1)\n", config.gamma));

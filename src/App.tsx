@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Plot from "react-plotly.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -32,6 +32,9 @@ interface VibrationalMode {
 interface SimulationResult {
   abs_cross: number[];
   fl_cross: number[];
+  abs_exp?: number[];
+  fl_exp?: number[];
+  profs_exp?: number[][];
   raman_cross: number[][];
   raman_spec: number[][];
   conv_el: number[];
@@ -44,6 +47,23 @@ interface ProgressPayload {
   parameters: number[];
 }
 
+interface FitResultPayload {
+  config: ResRamConfig;
+  modes: VibrationalMode[];
+  folder_name: string;
+}
+
+interface FitSession {
+  baseConfig: ResRamConfig;
+  baseModes: VibrationalMode[];
+  fitIndices: number[];
+  fitGamma: boolean;
+  fitM: boolean;
+  fitTheta: boolean;
+  fitKappa: boolean;
+  fitE0: boolean;
+}
+
 function App() {
   const [config, setConfig] = useState<ResRamConfig | null>(null);
   const [modes, setModes] = useState<VibrationalMode[]>([]);
@@ -54,6 +74,8 @@ function App() {
   const [maxEval, setMaxEval] = useState(1000);
   const [refreshStep, setRefreshStep] = useState(10);
   const [, setProgress] = useState<ProgressPayload | null>(null);
+  const [isFitting, setIsFitting] = useState(false);
+  const fitSessionRef = useRef<FitSession | null>(null);
 
   // Fitting toggles
   const [fitSwitches, setFitSwitches] = useState({
@@ -69,6 +91,47 @@ function App() {
     const unlisten = listen<ProgressPayload>("fit-progress", (event) => {
       setProgress(event.payload);
       setStatus(`Fitting: Iteration ${event.payload.iteration}, Loss: ${event.payload.loss.toExponential(4)}`);
+
+      const session = fitSessionRef.current;
+      if (!session) return;
+
+      let cursor = 0;
+      const nextModes = session.baseModes.map((m) => ({ ...m }));
+      const nextConfig: ResRamConfig = { ...session.baseConfig };
+
+      for (const idx of session.fitIndices) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextModes[idx].displacement = event.payload.parameters[cursor];
+        cursor += 1;
+      }
+
+      if (session.fitGamma) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextConfig.gamma = event.payload.parameters[cursor];
+        cursor += 1;
+      }
+      if (session.fitM) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextConfig.m = event.payload.parameters[cursor];
+        cursor += 1;
+      }
+      if (session.fitTheta) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextConfig.theta = event.payload.parameters[cursor];
+        cursor += 1;
+      }
+      if (session.fitKappa) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextConfig.kappa = event.payload.parameters[cursor];
+        cursor += 1;
+      }
+      if (session.fitE0) {
+        if (cursor >= event.payload.parameters.length) return;
+        nextConfig.e0 = event.payload.parameters[cursor];
+      }
+
+      setModes(nextModes);
+      setConfig(nextConfig);
     });
     
     // Initial loading from sample_data
@@ -79,6 +142,15 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!dir || !config || modes.length === 0) return;
+    const timer = window.setTimeout(() => {
+      runCalcWith(config, modes, rpumps);
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [dir, config, modes, rpumps]);
+
   async function loadFolder(path: string) {
     try {
       const loadedConfig = await invoke<ResRamConfig>("load_data", { dir: path });
@@ -87,10 +159,10 @@ function App() {
       setConfig(loadedConfig);
       setModes(loadedModes);
       setRpumps(loadedRpumps);
-      setFitSwitches({
-        ...fitSwitches,
+      setFitSwitches((prev) => ({
+        ...prev,
         modes: new Array(loadedModes.length).fill(true)
-      });
+      }));
       setDir(path);
       setStatus(`Loaded data from ${path}`);
     } catch (e) {
@@ -105,24 +177,43 @@ function App() {
     }
   }
 
-  async function runCalc() {
-    if (!config || modes.length === 0) return;
-    setStatus("Calculating...");
+  async function runCalcWith(nextConfig: ResRamConfig, nextModes: VibrationalMode[], nextRpumps: number[]) {
     try {
-      const res = await invoke<SimulationResult>("run_calculation", { config, modes, rpumps });
+      const res = await invoke<SimulationResult>("run_calculation", {
+        dir,
+        config: nextConfig,
+        modes: nextModes,
+        rpumps: nextRpumps,
+      });
       setResult(res);
-      setStatus("Calculation complete");
     } catch (e) {
       setStatus(`Error: ${e}`);
     }
   }
 
+  async function runCalc() {
+    if (!config || modes.length === 0) return;
+    setStatus("Calculating...");
+    await runCalcWith(config, modes, rpumps);
+  }
+
   async function startFit() {
     if (!config || modes.length === 0) return;
     setStatus("Starting fit...");
+    setIsFitting(true);
     try {
       const fitIndices = modes.map((_, i) => i).filter(i => fitSwitches.modes[i]);
-      const resConfig = await invoke<ResRamConfig>("run_fit", {
+      fitSessionRef.current = {
+        baseConfig: { ...config },
+        baseModes: modes.map((m) => ({ ...m })),
+        fitIndices,
+        fitGamma: fitSwitches.gamma,
+        fitM: fitSwitches.m,
+        fitTheta: fitSwitches.theta,
+        fitKappa: fitSwitches.kappa,
+        fitE0: fitSwitches.e0,
+      };
+      const fitResult = await invoke<FitResultPayload>("run_fit", {
         dir,
         config,
         modes,
@@ -136,11 +227,15 @@ function App() {
         maxEval: maxEval,
         refreshStep: refreshStep,
       });
-      setConfig(resConfig);
-      setStatus("Fitting complete");
-      runCalc();
+      setConfig(fitResult.config);
+      setModes(fitResult.modes);
+      await runCalcWith(fitResult.config, fitResult.modes, rpumps);
+      setStatus(`Fitting complete and saved: ${fitResult.folder_name}`);
     } catch (e) {
       setStatus(`Error: ${e}`);
+    } finally {
+      fitSessionRef.current = null;
+      setIsFitting(false);
     }
   }
 
@@ -165,6 +260,11 @@ function App() {
     const newSwitches = [...fitSwitches.modes];
     newSwitches[idx] = !newSwitches[idx];
     setFitSwitches({...fitSwitches, modes: newSwitches});
+  };
+
+  const modeColor = (i: number) => {
+    const hue = (i * 47) % 360;
+    return `hsl(${hue}, 70%, 45%)`;
   };
 
   return (
@@ -253,7 +353,7 @@ function App() {
             <button onClick={handleSave} disabled={!config} title="Save Changes"><Save size={18} /></button>
           </div>
           <button onClick={runCalc} disabled={!config}><Play size={18} /> Run Calc</button>
-          <button className="primary" onClick={startFit} disabled={!config}><Activity size={18} /> Start Fit</button>
+          <button className="primary" onClick={startFit} disabled={!config || isFitting}><Activity size={18} /> Start Fit</button>
         </div>
       </nav>
 
@@ -275,7 +375,21 @@ function App() {
                   type: 'scatter' as const,
                   name: 'FL (Calc)',
                   line: { color: 'red' }
-                }
+                },
+                ...(result.abs_exp ? [{
+                  x: result.conv_el,
+                  y: result.abs_exp,
+                  type: 'scatter' as const,
+                  name: 'Abs (Exp)',
+                  line: { color: 'blue', dash: 'dash' as const }
+                }] : []),
+                ...(result.fl_exp ? [{
+                  x: result.conv_el,
+                  y: result.fl_exp,
+                  type: 'scatter' as const,
+                  name: 'FL (Exp)',
+                  line: { color: 'red', dash: 'dash' as const }
+                }] : [])
               ] : [])
             ]}
             layout={{ 
@@ -283,7 +397,7 @@ function App() {
               autosize: true,
               margin: { t: 40, r: 20, b: 40, l: 60 },
               xaxis: { title: { text: 'Wavenumber (cm⁻¹)' } },
-              yaxis: { title: { text: 'Cross Section' } }
+                yaxis: { title: { text: 'Cross Section (Å²/Molecule)' } }
             }}
             useResizeHandler={true}
             style={{ width: "100%", height: "100%" }}
@@ -294,19 +408,48 @@ function App() {
           <div className="plot-container small">
             <Plot
               data={[
-                ...(result ? result.raman_cross.map((rc, i) => ({
-                  x: result.conv_el,
-                  y: rc,
-                  type: 'scatter' as const,
-                  name: `${modes[i].frequency.toFixed(0)}`
-                })) : [])
+                  ...(result ? result.raman_cross.map((rc, i) => ({
+                    x: result.conv_el,
+                    y: rc,
+                    type: 'scatter' as const,
+                    mode: 'lines' as const,
+                    name: `${modes[i].frequency.toFixed(0)} cm⁻¹`,
+                    line: { color: modeColor(i) }
+                  })) : []),
+                  ...(result && result.profs_exp ? result.profs_exp.map((row, j) => {
+                    const xPts = rpumps.map((pump) => {
+                      if (!result.conv_el.length) return pump;
+                      let bestIdx = 0;
+                      let bestDiff = Infinity;
+                      result.conv_el.forEach((v, idx) => {
+                        const d = Math.abs(v - pump);
+                        if (d < bestDiff) {
+                          bestDiff = d;
+                          bestIdx = idx;
+                        }
+                      });
+                      return result.conv_el[bestIdx];
+                    });
+                    const yPts = row.slice(0, xPts.length);
+                    return {
+                      x: xPts.slice(0, yPts.length),
+                      y: yPts,
+                      type: 'scatter' as const,
+                      mode: 'markers' as const,
+                      name: `${modes[j]?.frequency?.toFixed(0) ?? j} cm⁻¹ (Exp)`,
+                      marker: { color: modeColor(j), size: 7, symbol: 'circle-open' as const },
+                      showlegend: false,
+                    };
+                  }) : [])
               ]}
               layout={{ 
                 title: { text: 'REPs' }, 
                 autosize: true,
                 margin: { t: 40, r: 20, b: 40, l: 60 },
-                xaxis: { title: { text: 'Excitation (cm⁻¹)' } },
-                showlegend: false
+                  xaxis: { title: { text: 'Excitation Wavenumber (cm⁻¹)' } },
+                  yaxis: { title: { text: 'Raman Cross Section (10^-14 Å²/Molecule)' } },
+                  showlegend: true,
+                  legend: { orientation: 'h', y: -0.2 }
               }}
               useResizeHandler={true}
               style={{ width: "100%", height: "100%" }}
@@ -327,6 +470,7 @@ function App() {
                 autosize: true,
                 margin: { t: 40, r: 20, b: 40, l: 60 },
                 xaxis: { title: { text: 'Raman Shift (cm⁻¹)' } },
+                  yaxis: { title: { text: 'Raman Cross Section (10^-14 Å²/Molecule)' } },
                 showlegend: false
               }}
               useResizeHandler={true}
