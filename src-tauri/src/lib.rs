@@ -60,25 +60,36 @@ async fn run_fit<R: Runtime>(
     let rp_path = root.join("rpumps.dat");
 
     let abs_exp_content = std::fs::read_to_string(abs_exp_path).map_err(|e| e.to_string())?;
-    let abs_exp: Array1<f64> = abs_exp_content.lines().filter_map(|l| l.split('\t').nth(1)?.trim().parse().ok()).collect();
+    let abs_exp: Array1<f64> = abs_exp_content.lines()
+        .filter_map(|l| l.split_whitespace().nth(1)?.parse().ok())
+        .collect();
 
     let profs_exp_content = std::fs::read_to_string(profs_exp_path).map_err(|e| e.to_string())?;
     let profs_rows: Vec<Vec<f64>> = profs_exp_content.lines()
-        .map(|l| l.split('\t').filter_map(|s| s.trim().parse().ok()).collect())
+        .map(|l| l.split_whitespace().filter_map(|s| s.parse().ok()).collect())
         .filter(|r: &Vec<f64>| !r.is_empty())
         .collect();
     
-    let n_modes = profs_rows.len();
-    let n_pumps = if n_modes > 0 { profs_rows[0].len() } else { 0 };
-    let mut profs_exp = Array2::zeros((n_modes, n_pumps));
-    for (i, row) in profs_rows.into_iter().enumerate() {
-        for (j, val) in row.into_iter().enumerate() {
-            profs_exp[[i, j]] = val;
-        }
+    let rp_content = std::fs::read_to_string(rp_path).map_err(|e| e.to_string())?;
+    let mut rpumps: Vec<f64> = rp_content.lines().filter_map(|l| l.trim().parse().ok()).collect();
+
+    // Fix dimensions: ensure n_modes matches freqs.len() and n_pumps matches rpumps.len()
+    let n_modes = profs_rows.len().min(modes.len());
+    let mut n_pumps = if !profs_rows.is_empty() { profs_rows[0].len() } else { 0 };
+    
+    // If we have more rpumps than data columns, truncate rpumps
+    if rpumps.len() > n_pumps {
+        rpumps.truncate(n_pumps);
+    } else if n_pumps > rpumps.len() {
+        n_pumps = rpumps.len();
     }
 
-    let rp_content = std::fs::read_to_string(rp_path).map_err(|e| e.to_string())?;
-    let rpumps: Vec<f64> = rp_content.lines().filter_map(|l| l.trim().parse().ok()).collect();
+    let mut profs_exp = Array2::zeros((n_modes, n_pumps));
+    for i in 0..n_modes {
+        for j in 0..n_pumps {
+            profs_exp[[i, j]] = profs_rows[i][j];
+        }
+    }
 
     // Grids
     let el_reach = config.el_reach;
@@ -126,7 +137,7 @@ async fn run_fit<R: Runtime>(
         pre_r,
         beta: 1.0 / k_b_t,
         dt: ts,
-        fit_indices,
+        fit_indices: fit_indices.clone(),
         fit_gamma,
         fit_m,
         fit_theta,
@@ -142,7 +153,7 @@ async fn run_fit<R: Runtime>(
 
     let algorithm = match algorithm_name.as_str() {
         "cobyla" => nlopt::Algorithm::Cobyla,
-        _ => nlopt::Algorithm::Powell,
+        _ => nlopt::Algorithm::Bobyqa,
     };
 
     let (optimized_params, _final_loss) = run_optimization(

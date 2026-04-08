@@ -80,8 +80,11 @@ fn objective_function(x: &[f64], _gradient: Option<&mut [f64]>, context: &mut Op
     let correlation = corrcoef(&abs_cross.view(), &context.abs_exp.view());
     
     let mut total_sigma = 0.0;
-    for (idx, &mode_rp) in context.rp.iter().enumerate() {
-        for mode_idx in 0..wg.len() {
+    let n_modes_to_compare = wg.len().min(context.profs_exp.nrows());
+    let n_pumps_to_compare = context.rp.len().min(context.profs_exp.ncols());
+
+    for (idx, &mode_rp) in context.rp.iter().take(n_pumps_to_compare).enumerate() {
+        for mode_idx in 0..n_modes_to_compare {
             let diff = raman_cross[[mode_idx, mode_rp]] - context.profs_exp[[mode_idx, idx]];
             total_sigma += 1e7 * diff.powi(2);
         }
