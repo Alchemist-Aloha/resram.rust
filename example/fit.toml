@@ -1,0 +1,24 @@
+# Fit configuration for resram-cli
+# Put this file in the working directory and run `resram-cli --fit` to enable fitting.
+
+# Optimization algorithm (examples: Praxis, Cobyla, Bobyqa, Newuoa, NewuoaBound,
+# Neldermead, Sbplx, Lbfgs)
+algorithm = "Cobyla"
+
+# Maximum number of function evaluations allowed
+max_eval = 100
+
+# Relative function tolerance for convergence
+ftol_rel = 1e-9
+
+# Indices of vibrational modes to fit (0-based index)
+# Example: fit modes 0 and 2
+fit_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+
+# Toggle which global parameters to include in the fit
+# If true, that parameter will be varied by the optimizer
+fit_gamma = true   # fit homogeneous broadening (gamma)
+fit_m = false      # fit transition dipole length (m)
+fit_theta = false  # fit inhomogeneous width (theta)
+fit_kappa = false  # fit kappa
+fit_e0 = false     # fit E0 (0-0 transition energy)

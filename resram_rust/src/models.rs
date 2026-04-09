@@ -21,6 +21,32 @@ pub struct ResRamConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FitConfig {
+    #[serde(default = "default_algorithm")]
+    pub algorithm: String,
+    #[serde(default = "default_max_eval")]
+    pub max_eval: u32,
+    #[serde(default = "default_ftol_rel")]
+    pub ftol_rel: f64,
+    #[serde(default)]
+    pub fit_indices: Vec<usize>,
+    #[serde(default)]
+    pub fit_gamma: bool,
+    #[serde(default)]
+    pub fit_m: bool,
+    #[serde(default)]
+    pub fit_theta: bool,
+    #[serde(default)]
+    pub fit_kappa: bool,
+    #[serde(default)]
+    pub fit_e0: bool,
+}
+
+fn default_algorithm() -> String { "sbplx".to_string() }
+fn default_max_eval() -> u32 { 1000 }
+fn default_ftol_rel() -> f64 { 1e-6 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VibrationalMode {
     pub frequency: f64,
     pub displacement: f64,

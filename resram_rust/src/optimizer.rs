@@ -110,7 +110,7 @@ fn objective_function(x: &[f64], _gradient: Option<&mut [f64]>, context: &mut Op
 
 pub fn run_optimization(
     algorithm: Algorithm,
-    mut context: OptimizationContext,
+    context: OptimizationContext,
     max_eval: u32,
     ftol_rel: f64,
 ) -> Result<(Vec<f64>, f64), String> {

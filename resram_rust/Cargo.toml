@@ -5,20 +5,20 @@ edition = "2021"
 
 [lib]
 name = "resram_rust"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
 name = "resram-cli"
 path = "src/bin/resram-cli.rs"
 
 [dependencies]
-ndarray = "0.15"
+ndarray = "0.17"
 num-complex = "0.4"
-numpy = "0.21"
-pyo3 = { version = "0.21", features = ["extension-module"] }
 rayon = "1.8"
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-nlopt = "0.7"
+toml = "1.1"
+nlopt = "0.8.1"
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }

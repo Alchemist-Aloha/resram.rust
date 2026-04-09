@@ -10,6 +10,7 @@ resram_rust.dll
 *.svg
 #data output files
 *_data/
+data_*/
 # Dask
 dask-worker-space/
 best_fit/data_*/
