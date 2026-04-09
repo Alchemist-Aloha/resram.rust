@@ -1,4 +1,4 @@
-# ResRAM_NG: Resonance Raman Excitation Profile Analysis 🧪
+# ResRam.rust: Resonance Raman Excitation Profile Analysis 🧪
 
 ResRAM is a standalone, high-performance theoretical framework and software tool for benchmarking DFT functionals against experimental Femtosecond Stimulated Raman Spectroscopy (FSRS) data.
 
@@ -14,15 +14,17 @@ This version has been ported to **Tauri + Rust** for maximum performance and a m
 - **Linux users:** Install system dependencies:
   `sudo apt-get install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev patchelf`
 
-### Running the Desktop App
-1. Install dependencies:
-   ```bash
+### Clone the Repository
+```bash
+git clone https://github.com/Alchemist-Aloha/resram.rust
+cd resram.rust
+```
+
+### Building the Desktop App
+```bash
    npm install
-   ```
-2. Start in development mode:
-   ```bash
-   npm run tauri dev
-   ```
+   npm run tauri build --release
+```
 
 ---
 
