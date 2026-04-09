@@ -24,6 +24,18 @@ interface ResRamConfig {
   boltz_toggle: boolean;
 }
 
+interface FitConfig {
+  algorithm: string;
+  max_eval: number;
+  ftol_rel: number;
+  fit_indices: number[];
+  fit_gamma: boolean;
+  fit_m: boolean;
+  fit_theta: boolean;
+  fit_kappa: boolean;
+  fit_e0: boolean;
+}
+
 interface VibrationalMode {
   frequency: number;
   displacement: number;
@@ -157,14 +169,34 @@ function App() {
     try {
       const loadedConfig = await invoke<ResRamConfig>("load_data", { dir: path });
       const [loadedModes, loadedRpumps] = await invoke<[VibrationalMode[], number[]]>("load_vibrational_data_cmd", { dir: path });
-      
+      const fitConfig = await invoke<FitConfig | null>("load_fit_config_cmd", { dir: path });
+
       setConfig(loadedConfig);
       setModes(loadedModes);
       setRpumps(loadedRpumps);
-      setFitSwitches((prev) => ({
-        ...prev,
-        modes: new Array(loadedModes.length).fill(true)
-      }));
+      
+      if (fitConfig) {
+        setFitAlgorithm(fitConfig.algorithm);
+        setMaxEval(fitConfig.max_eval);
+        setFitSwitches({
+          gamma: fitConfig.fit_gamma,
+          m: fitConfig.fit_m,
+          theta: fitConfig.fit_theta,
+          kappa: fitConfig.fit_kappa,
+          e0: fitConfig.fit_e0,
+          modes: loadedModes.map((_, i) => fitConfig.fit_indices.includes(i))
+        });
+      } else {
+        setFitSwitches({
+          gamma: true,
+          m: false,
+          theta: false,
+          kappa: false,
+          e0: false,
+          modes: new Array(loadedModes.length).fill(true)
+        });
+      }
+      
       setDir(path);
       setStatus(`Loaded data from ${path}`);
     } catch (e) {
@@ -245,7 +277,18 @@ function App() {
     if (!config || !dir) return;
     setStatus("Saving...");
     try {
-      const folderName = await invoke<string>("save_data", { dir, config, modes });
+      const fit_config: FitConfig = {
+        algorithm: fitAlgorithm,
+        max_eval: maxEval,
+        ftol_rel: 1e-8,
+        fit_indices: modes.map((_, i) => i).filter(i => fitSwitches.modes[i]),
+        fit_gamma: fitSwitches.gamma,
+        fit_m: fitSwitches.m,
+        fit_theta: fitSwitches.theta,
+        fit_kappa: fitSwitches.kappa,
+        fit_e0: fitSwitches.e0,
+      };
+      const folderName = await invoke<string>("save_data", { dir, config, modes, fitConfig: fit_config });
       setStatus(`Saved to folder: ${folderName}`);
     } catch (e) {
       setStatus(`Error: ${e}`);

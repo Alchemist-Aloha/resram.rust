@@ -1,5 +1,5 @@
-use resram_rust::config::{load_config, load_vibrational_data, migrate_txt_to_toml, save_vibrational_data, write_config_txt, write_config_toml};
-use resram_rust::models::{ResRamConfig, VibrationalMode, SimulationResult};
+use resram_rust::config::{load_config, load_vibrational_data, migrate_txt_to_toml, save_vibrational_data, write_config_txt, write_config_toml, load_fit_config, save_fit_config};
+use resram_rust::models::{ResRamConfig, VibrationalMode, SimulationResult, FitConfig};
 use resram_rust::core::compute_spectra;
 use resram_rust::optimizer::{run_optimization, OptimizationContext};
 use std::path::Path;
@@ -185,7 +185,12 @@ struct FitResultPayload {
     folder_name: String,
 }
 
-fn save_data_impl(dir: &str, config: &ResRamConfig, modes: &[VibrationalMode]) -> Result<String, String> {
+fn save_data_impl(
+    dir: &str, 
+    config: &ResRamConfig, 
+    modes: &[VibrationalMode],
+    fit_config: &FitConfig
+) -> Result<String, String> {
     use std::fs;
     use chrono::Local;
 
@@ -204,6 +209,9 @@ fn save_data_impl(dir: &str, config: &ResRamConfig, modes: &[VibrationalMode]) -
     write_config_txt(&txt_path, config).map_err(|e| e.to_string())?;
 
     save_vibrational_data(&output_dir, modes).map_err(|e| e.to_string())?;
+    
+    // Save fit.toml if requested or present in state
+    save_fit_config(output_dir.join("fit.toml"), fit_config).map_err(|e| e.to_string())?;
 
     // Save calculated outputs to match Python run_save style.
     let el_reach = config.el_reach;
@@ -295,6 +303,18 @@ fn save_data_impl(dir: &str, config: &ResRamConfig, modes: &[VibrationalMode]) -
     }
 
     Ok(folder_name)
+}
+
+#[tauri::command]
+fn load_fit_config_cmd(dir: String) -> Result<Option<FitConfig>, String> {
+    let root = Path::new(&dir);
+    let fit_path = root.join("fit.toml");
+    if fit_path.exists() {
+        let config = load_fit_config(fit_path).map_err(|e| e.to_string())?;
+        Ok(Some(config))
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -501,7 +521,19 @@ async fn run_fit<R: Runtime>(
         final_config.e0 = optimized_params[cursor];
     }
 
-    let folder_name = save_data_impl(&dir, &final_config, &final_modes)?;
+    let fit_config = FitConfig {
+        algorithm: algorithm_name,
+        max_eval,
+        ftol_rel: 1e-8,
+        fit_indices,
+        fit_gamma,
+        fit_m,
+        fit_theta,
+        fit_kappa,
+        fit_e0,
+    };
+
+    let folder_name = save_data_impl(&dir, &final_config, &final_modes, &fit_config)?;
 
     Ok(FitResultPayload {
         config: final_config,
@@ -511,8 +543,13 @@ async fn run_fit<R: Runtime>(
 }
 
 #[tauri::command]
-fn save_data(dir: String, config: ResRamConfig, modes: Vec<VibrationalMode>) -> Result<String, String> {
-    save_data_impl(&dir, &config, &modes)
+fn save_data(
+    dir: String, 
+    config: ResRamConfig, 
+    modes: Vec<VibrationalMode>,
+    fit_config: FitConfig
+) -> Result<String, String> {
+    save_data_impl(&dir, &config, &modes, &fit_config)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -524,7 +561,8 @@ pub fn run() {
             run_fit, 
             run_calculation, 
             load_vibrational_data_cmd,
-            save_data
+            save_data,
+            load_fit_config_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

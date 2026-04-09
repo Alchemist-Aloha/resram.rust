@@ -50,6 +50,7 @@ pub fn calculate_cross_sections(
     let wg_len = wg.len();
     
     let d_th = 1.0; // Python np.trapezoid default dx=1.0
+    let dt_step = if th_len > 1 { th[1] - th[0] } else { 0.0 };
 
     // 1. Pre-calculate time-dependent Kernels
     let mut kernels = Vec::with_capacity(th_len);
@@ -64,9 +65,12 @@ pub fn calculate_cross_sections(
 
         let mut sum_k = Complex64::new(0.0, 0.0);
         for i in 0..wg_len {
-            let k_k = (1.0 + eta[i]) * s_factors[i] * (1.0 - Complex64::from_polar(1.0, -wg[i] * t))
-                    + eta[i] * s_factors[i] * (1.0 - Complex64::from_polar(1.0, wg[i] * t));
-            sum_k += k_k;
+            let phase = wg[i] * t;
+            let (sin_p, cos_p) = phase.sin_cos();
+            let k_k_re = s_factors[i] * (1.0 + 2.0 * eta[i]) * (1.0 - cos_p);
+            let k_k_im = s_factors[i] * sin_p;
+            sum_k.re += k_k_re;
+            sum_k.im += k_k_im;
         }
         let a_t = Complex64::new(m.powi(2), 0.0) * (-sum_k).exp();
         
@@ -77,15 +81,29 @@ pub fn calculate_cross_sections(
 
     // 2. Abs/FL Integrals
     let (integ_a_vec, integ_f_vec): (Vec<f64>, Vec<f64>) = (0..el_full_len).into_par_iter().map(|i| {
-        let energy = el[i];
+        let phase_diff = el[i] - e0;
         let mut sum_a = Complex64::new(0.0, 0.0);
         let mut sum_f = Complex64::new(0.0, 0.0);
         
+        let delta_phase = phase_diff * dt_step;
+        let (sin_dp, cos_dp) = delta_phase.sin_cos();
+        let exp_delta = Complex64::new(cos_dp, sin_dp);
+        let mut current_exp = Complex64::new(1.0, 0.0);
+
         for j in 0..th_len {
-            let phase = (energy - e0) * th[j];
-            let exp_phase = Complex64::from_polar(1.0, phase);
-            sum_a += exp_phase * kernels[j];
-            sum_f += exp_phase * kernels_f[j];
+            sum_a += current_exp * kernels[j];
+            sum_f += current_exp * kernels_f[j];
+            
+            let next_re = current_exp.re * exp_delta.re - current_exp.im * exp_delta.im;
+            let next_im = current_exp.re * exp_delta.im + current_exp.im * exp_delta.re;
+            current_exp.re = next_re;
+            current_exp.im = next_im;
+            
+            if (j & 255) == 255 {
+                let norm = current_exp.norm();
+                current_exp.re /= norm;
+                current_exp.im /= norm;
+            }
         }
         
         ((sum_a * d_th).re, (sum_f * d_th).re)
@@ -111,8 +129,6 @@ pub fn calculate_cross_sections(
     let mut fl_cross = Array1::<f64>::zeros(conv_el.len());
     for i in 0..conv_el.len() {
         abs_cross[i] = abs_conv[i] * pre_a * conv_el[i];
-        // FL has a correction EL^2 / E0^2 in Python plot but not in core cross_sections.
-        // We'll apply it in compute_spectra to match the plot logic.
         fl_cross[i] = fl_conv[i] * pre_f * conv_el[i];
     }
 
@@ -121,14 +137,36 @@ pub fn calculate_cross_sections(
         let mut integ_r_mag_sq = Array1::<f64>::zeros(el_full_len);
         let factor = ((1.0 + eta[idx]).sqrt() * delta[idx]) / 2.0f64.sqrt();
         
+        let mut modified_kernels = Vec::with_capacity(th_len);
+        for j in 0..th_len {
+            let phase = wg[idx] * th[j];
+            let (sin_p, cos_p) = phase.sin_cos();
+            let q_r = factor * Complex64::new(1.0 - cos_p, sin_p);
+            modified_kernels.push(kernels[j] * q_r);
+        }
+        
         for i in 0..el_full_len {
-            let energy = el[i];
+            let phase_diff = el[i] - e0;
             let mut sum_r = Complex64::new(0.0, 0.0);
+            
+            let delta_phase = phase_diff * dt_step;
+            let (sin_dp, cos_dp) = delta_phase.sin_cos();
+            let exp_delta = Complex64::new(cos_dp, sin_dp);
+            let mut current_exp = Complex64::new(1.0, 0.0);
+
             for j in 0..th_len {
-                let phase = (energy - e0) * th[j];
-                let exp_phase = Complex64::from_polar(1.0, phase);
-                let q_r = factor * (1.0 - Complex64::from_polar(1.0, -wg[idx] * th[j]));
-                sum_r += exp_phase * kernels[j] * q_r;
+                sum_r += current_exp * modified_kernels[j];
+                
+                let next_re = current_exp.re * exp_delta.re - current_exp.im * exp_delta.im;
+                let next_im = current_exp.re * exp_delta.im + current_exp.im * exp_delta.re;
+                current_exp.re = next_re;
+                current_exp.im = next_im;
+                
+                if (j & 255) == 255 {
+                    let norm = current_exp.norm();
+                    current_exp.re /= norm;
+                    current_exp.im /= norm;
+                }
             }
             integ_r_mag_sq[i] = (sum_r * d_th).norm_sqr();
         }

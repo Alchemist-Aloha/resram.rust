@@ -199,7 +199,7 @@ fn main() -> Result<()> {
                 fit_e0: fit_config.fit_e0,
                 iteration: 0,
                 progress_callback: Some(Arc::new(|iter, loss, _| {
-                    if iter % 10 == 0 {
+                    if iter % 100 == 0 {
                         println!("Iteration {}: Loss = {:.4e}", iter, loss);
                     }
                 })),

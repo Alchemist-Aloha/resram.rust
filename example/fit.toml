@@ -6,7 +6,7 @@
 algorithm = "Cobyla"
 
 # Maximum number of function evaluations allowed
-max_eval = 100
+max_eval = 100000
 
 # Relative function tolerance for convergence
 ftol_rel = 1e-9

@@ -10,6 +10,7 @@ resram_rust.dll
 *.svg
 #data output files
 *_data/
+backend_comparison/
 data_*/
 # Dask
 dask-worker-space/
