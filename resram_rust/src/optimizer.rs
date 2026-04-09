@@ -63,7 +63,7 @@ fn objective_function(x: &[f64], _gradient: Option<&mut [f64]>, context: &mut Op
 
     if context.fit_e0 {
         current_config.e0 = x[cursor];
-        // cursor += 1; // Last one potentially
+        cursor += 1;
     }
 
     // Calculate loss

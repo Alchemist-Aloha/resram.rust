@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Plot from "react-plotly.js";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Settings, Play, Activity, FolderOpen, List, Save } from "lucide-react";
 import "./App.css";
 
@@ -205,9 +206,17 @@ function App() {
   }
 
   async function openFolder() {
-    const path = prompt("Enter data folder path:", dir || ".");
-    if (path) {
-      loadFolder(path);
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: dir || "."
+      });
+      if (selected && typeof selected === 'string') {
+        loadFolder(selected);
+      }
+    } catch (e) {
+      setStatus(`Error opening folder: ${e}`);
     }
   }
 
