@@ -55,7 +55,6 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
         with:
-          # Build both x86_64 and aarch64 on macOS
           targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
 
       - name: Build Tauri App
@@ -63,9 +62,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # This will be replaced by the tag if triggered by tag
-          releaseName: "ResRAM GUI v__VERSION__"
-          releaseBody: "Automated release of ResRAM GUI."
+          tagName: ${{ github.ref_name }} # Use actual tag name (e.g. v0.2.0)
+          releaseName: "ResRAM v${{ github.ref_name }}"
+          releaseBody: "Automated release of ResRAM GUI and CLI."
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.platform == 'macos-arm64' && '--target aarch64-apple-darwin' || '' }}
