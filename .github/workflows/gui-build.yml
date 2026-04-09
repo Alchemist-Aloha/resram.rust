@@ -1,0 +1,71 @@
+name: Build GUI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    name: Build GUI - ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: windows-latest
+            platform: windows-x64
+          - os: macos-latest
+            platform: macos-x64
+          - os: macos-latest
+            platform: macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libnlopt-dev \
+            pkg-config
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Build both x86_64 and aarch64 on macOS
+          targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # This will be replaced by the tag if triggered by tag
+          releaseName: "ResRAM GUI v__VERSION__"
+          releaseBody: "Automated release of ResRAM GUI."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.platform == 'macos-arm64' && '--target aarch64-apple-darwin' || '' }}

@@ -1,0 +1,65 @@
+name: Build CLI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build CLI - ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+            target: x86_64-unknown-linux-gnu
+            binary_name: resram-cli
+          - os: windows-latest
+            platform: windows-x64
+            target: x86_64-pc-windows-msvc
+            binary_name: resram-cli.exe
+          - os: macos-latest
+            platform: macos-x64
+            target: x86_64-apple-darwin
+            binary_name: resram-cli
+          - os: macos-latest
+            platform: macos-arm64
+            target: aarch64-apple-darwin
+            binary_name: resram-cli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnlopt-dev pkg-config
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build CLI
+        run: cargo build --release --bin resram-cli --target ${{ matrix.target }}
+        working-directory: resram_rust
+
+      - name: Rename and Stage Binary
+        shell: bash
+        run: |
+          mkdir -p output
+          cp resram_rust/target/${{ matrix.target }}/release/${{ matrix.binary_name }} output/resram-cli-${{ matrix.platform }}${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: resram-cli-${{ matrix.platform }}
+          path: output/resram-cli-${{ matrix.platform }}*

@@ -243,6 +243,10 @@ function App() {
   async function startFit() {
     if (!config || modes.length === 0) return;
     setStatus("Starting fit...");
+    
+    // Auto-save before fit
+    await handleSave();
+    
     setIsFitting(true);
     try {
       const fitIndices = modes.map((_, i) => i).filter(i => fitSwitches.modes[i]);

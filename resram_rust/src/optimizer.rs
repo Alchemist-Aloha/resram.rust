@@ -125,7 +125,8 @@ pub fn run_optimization(
     }
 
     if context.fit_gamma {
-        initial_x.push(context.config.gamma);
+        let val = context.config.gamma.max(10.0).min(1000.0);
+        initial_x.push(val);
         lower_bounds.push(10.0);
         upper_bounds.push(1000.0);
     }
@@ -137,13 +138,15 @@ pub fn run_optimization(
     }
 
     if context.fit_theta {
-        initial_x.push(context.config.theta);
+        let val = context.config.theta.max(0.0).min(10.0);
+        initial_x.push(val);
         lower_bounds.push(0.0);
         upper_bounds.push(10.0);
     }
 
     if context.fit_kappa {
-        initial_x.push(context.config.kappa);
+        let val = context.config.kappa.max(0.0).min(1.0);
+        initial_x.push(val);
         lower_bounds.push(0.0);
         upper_bounds.push(1.0);
     }
